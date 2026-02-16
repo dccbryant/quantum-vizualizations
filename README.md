@@ -22,6 +22,17 @@ python3 -m http.server 4173
 
 Then open <http://localhost:4173>.
 
+## Getting the latest version
+
+If you're missing recent changes locally, sync from git before running:
+
+```bash
+git fetch origin
+git checkout <your-branch-or-commit>
+```
+
+Then run the local server command above.
+
 ## Basic usage
 
 1. Configure qubit and timeline length.
