@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quantum Vizualizations Lab</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header>
+    <h1>Quantum Drag & Drop Lab</h1>
+    <div class="controls">
+      <button id="runButton">Run Circuit</button>
+      <button id="clearButton">Clear</button>
+      <label for="vizMode">Visualizations</label>
+      <select id="vizMode">
+        <option value="bloch" selected>Illustrated Bloch Spheres</option>
+        <option value="heatmap">WebGL Particle Heatmap Sphere</option>
+        <option value="qsphere">WebGL Q-Sphere</option>
+        <option value="fluid">WebGL Fluid Particle Flow</option>
+      </select>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Gate Palette</h2>
+      <p class="hint">Drag gates to any timeline cell. Drop an X onto another qubit in the same column to convert to CNOT.</p>
+      <div id="gatePalette" class="gate-palette"></div>
+    </aside>
+
+    <section class="circuit-section">
+      <div class="qubit-controls">
+        <label for="qubitCount">Qubits (max 20)</label>
+        <input id="qubitCount" type="number" min="1" max="20" value="4" />
+        <label for="timelineLength">Timeline</label>
+        <input id="timelineLength" type="number" min="4" max="64" value="16" />
+        <button id="resizeButton">Apply Grid</button>
+      </div>
+      <div id="circuitGrid" class="circuit-grid"></div>
+    </section>
+
+    <section>
+      <h2>Qubit State Output</h2>
+      <div id="resultSummary" class="result-summary">Press <strong>Run Circuit</strong> to simulate.</div>
+      <div id="visualizationContainer" class="viz-grid"></div>
+    </section>
+  </main>
+
+  <template id="gateTemplate">
+    <button class="gate" draggable="true"></button>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
