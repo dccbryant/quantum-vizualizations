@@ -397,16 +397,19 @@ function drawVisualizations(vectors, measured) {
   visualizationContainer.innerHTML = "";
 
   if (vizMode.value === "fluid") {
-    const card = document.createElement("article");
-    card.className = "viz-card";
-    const label = document.createElement("div");
-    label.textContent = `All qubits fluid field (${vectors.length} qubits)`;
-    const canvas = document.createElement("canvas");
-    canvas.width = 560;
-    canvas.height = 340;
-    card.append(label, canvas);
-    visualizationContainer.appendChild(card);
-    trackAnimation(drawFluidVizAllQubits(canvas, vectors, measured));
+    vectors.forEach((v, index) => {
+      const measuredCount = measured.filter((m) => m.q === index).length;
+      const card = document.createElement("article");
+      card.className = "viz-card";
+      const label = document.createElement("div");
+      label.textContent = `q${index} vortex | ${v.x >= 0 ? "cw" : "ccw"} | p(1)=${v.p1.toFixed(3)}`;
+      const canvas = document.createElement("canvas");
+      canvas.width = 220;
+      canvas.height = 220;
+      card.append(label, canvas);
+      visualizationContainer.appendChild(card);
+      trackAnimation(drawFluidBlackHole(canvas, v, index, measuredCount));
+    });
     return;
   }
 
@@ -542,142 +545,96 @@ function drawQSphere(canvas, v, index, total) {
   });
 }
 
-function drawFluidVizAllQubits(canvas, vectors, measured) {
+function drawFluidBlackHole(canvas, vector, index, measuredCount) {
   if (!canUseWebGL()) {
-    drawBloch(canvas, { x: 0, y: 0, z: 1 });
+    drawBloch(canvas, vector);
     return null;
   }
   const ctx = canvas.getContext("2d");
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const baseRadius = Math.min(canvas.width, canvas.height) * 0.14;
 
-  const cols = Math.ceil(Math.sqrt(Math.max(1, vectors.length)));
-  const rows = Math.ceil(vectors.length / cols);
-  const cellW = canvas.width / cols;
-  const cellH = canvas.height / rows;
+  const direction = vector.x >= 0 ? 1 : -1; // clockwise / anticlockwise
+  const spin = 0.018 + Math.abs(vector.y) * 0.055 + measuredCount * 0.015; // fast / slow
+  const pull = 0.010 + Math.max(0, vector.p1) * 0.022;
+  const hue = ((Math.atan2(vector.y, vector.x) * 180) / Math.PI + 360) % 360;
 
-  const vortices = vectors.map((vector, index) => {
-    const measuredCount = measured.filter((m) => m.q === index).length;
-    const col = index % cols;
-    const row = Math.floor(index / cols);
-    const centerX = col * cellW + cellW * 0.5;
-    const centerY = row * cellH + cellH * 0.5;
-
-    // Clockwise/anticlockwise from Bloch x sign.
-    const direction = vector.x >= 0 ? 1 : -1;
-    // Fast/slow from Bloch y magnitude + measurements.
-    const spin = 0.004 + Math.abs(vector.y) * 0.015 + measuredCount * 0.003;
-    const pull = 0.010 + Math.max(0, vector.p1) * 0.018;
-    const radius = Math.min(cellW, cellH) * (0.18 + 0.08 * Math.min(1, Math.abs(vector.z)));
-
-    return {
-      index,
-      vector,
-      measuredCount,
-      centerX,
-      centerY,
-      direction,
-      spin,
-      pull,
-      radius,
-      hue: ((Math.atan2(vector.y, vector.x) * 180) / Math.PI + 360) % 360,
-    };
-  });
-
-  const particles = Array.from({ length: Math.max(480, vectors.length * 120) }, (_, i) => {
-    const v = vortices[i % vortices.length];
+  const particles = Array.from({ length: 160 }, (_, i) => {
     const angle = Math.random() * Math.PI * 2;
-    const dist = v.radius * (1.0 + Math.random() * 2.8);
+    const dist = baseRadius * (1.5 + Math.random() * 3.6);
     return {
-      x: v.centerX + Math.cos(angle) * dist,
-      y: v.centerY + Math.sin(angle) * dist,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      hue: (v.hue + i * 3) % 360,
-      target: i % vortices.length,
+      x: cx + Math.cos(angle) * dist,
+      y: cy + Math.sin(angle) * dist,
+      vx: (Math.random() - 0.5) * 0.2,
+      vy: (Math.random() - 0.5) * 0.2,
+      phase: i * 0.03,
     };
   });
 
   return createAnimationLoop((time) => {
-    ctx.fillStyle = "rgba(4, 8, 18, 0.23)";
+    ctx.fillStyle = "rgba(4, 8, 18, 0.28)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    vortices.forEach((vortex) => {
-      const corePulse = 1 + 0.12 * Math.sin(time * 0.004 + vortex.index);
-      const ringRadius = vortex.radius * 2.5;
+    const glow = ctx.createRadialGradient(cx, cy, baseRadius * 0.5, cx, cy, baseRadius * 3.5);
+    glow.addColorStop(0, `hsla(${hue} 95% 60% / 0.30)`);
+    glow.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseRadius * 3.5, 0, Math.PI * 2);
+    ctx.fill();
 
-      const ringGrad = ctx.createRadialGradient(
-        vortex.centerX,
-        vortex.centerY,
-        vortex.radius * 0.6,
-        vortex.centerX,
-        vortex.centerY,
-        ringRadius
-      );
-      ringGrad.addColorStop(0, `hsla(${vortex.hue} 90% 55% / 0.28)`);
-      ringGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
-      ctx.fillStyle = ringGrad;
-      ctx.beginPath();
-      ctx.arc(vortex.centerX, vortex.centerY, ringRadius, 0, Math.PI * 2);
-      ctx.fill();
+    const corePulse = 1 + 0.08 * Math.sin(time * 0.004 + index);
+    ctx.fillStyle = "rgba(2, 3, 10, 0.98)";
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseRadius * corePulse, 0, Math.PI * 2);
+    ctx.fill();
 
-      ctx.fillStyle = "rgba(2, 4, 10, 0.98)";
-      ctx.beginPath();
-      ctx.arc(vortex.centerX, vortex.centerY, vortex.radius * corePulse, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.strokeStyle = `hsla(${hue} 95% 72% / 0.65)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, baseRadius * 1.7, 0, Math.PI * 2);
+    ctx.stroke();
 
-      ctx.strokeStyle = `hsla(${vortex.hue} 95% 70% / 0.65)`;
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.arc(vortex.centerX, vortex.centerY, vortex.radius * 1.6, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.fillStyle = "rgba(220, 230, 255, 0.85)";
-      const directionLabel = vortex.direction > 0 ? "cw" : "ccw";
-      const speedLabel = vortex.spin > 0.015 ? "fast" : vortex.spin > 0.01 ? "med" : "slow";
-      ctx.fillText(`q${vortex.index} ${directionLabel} ${speedLabel}`, vortex.centerX - 32, vortex.centerY + ringRadius + 12);
-    });
-
-    particles.forEach((p, i) => {
-      const vortex = vortices[p.target];
-      const dx = p.x - vortex.centerX;
-      const dy = p.y - vortex.centerY;
+    particles.forEach((p) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
       const dist = Math.hypot(dx, dy) + 0.0001;
 
-      // Tangential swirl for clockwise/anticlockwise spin.
-      const tx = (-dy / dist) * vortex.direction;
-      const ty = (dx / dist) * vortex.direction;
+      const tx = (-dy / dist) * direction;
+      const ty = (dx / dist) * direction;
+      const inwardX = (-dx / dist) * pull;
+      const inwardY = (-dy / dist) * pull;
+      const wobble = Math.sin(time * 0.002 + p.phase) * 0.02;
 
-      // Inward pull + state-driven wobble.
-      const pullX = (-dx / dist) * vortex.pull;
-      const pullY = (-dy / dist) * vortex.pull;
-      const wobble = Math.sin(time * 0.002 + i * 0.07 + vortex.index) * 0.015;
-
-      p.vx += tx * vortex.spin + pullX + wobble * vortex.vector.z;
-      p.vy += ty * vortex.spin + pullY + wobble * vortex.vector.y;
-      p.vx *= 0.987;
-      p.vy *= 0.987;
+      p.vx += tx * spin + inwardX + wobble * vector.z * 0.35;
+      p.vy += ty * spin + inwardY + wobble * vector.y * 0.35;
+      p.vx *= 0.986;
+      p.vy *= 0.986;
       p.x += p.vx;
       p.y += p.vy;
 
-      if (dist < vortex.radius * 0.85 || dist > Math.min(cellW, cellH) * 0.68) {
+      const escapeRadius = baseRadius * 4.8;
+      if (dist < baseRadius * 0.9 || dist > escapeRadius) {
         const respawnAngle = Math.random() * Math.PI * 2;
-        const respawnDist = vortex.radius * (1.6 + Math.random() * 2.8);
-        p.x = vortex.centerX + Math.cos(respawnAngle) * respawnDist;
-        p.y = vortex.centerY + Math.sin(respawnAngle) * respawnDist;
-        p.vx = (Math.random() - 0.5) * 0.25;
-        p.vy = (Math.random() - 0.5) * 0.25;
+        const respawnDist = baseRadius * (1.8 + Math.random() * 3.0);
+        p.x = cx + Math.cos(respawnAngle) * respawnDist;
+        p.y = cy + Math.sin(respawnAngle) * respawnDist;
+        p.vx = (Math.random() - 0.5) * 0.2;
+        p.vy = (Math.random() - 0.5) * 0.2;
       }
 
-      if (p.x < 0 || p.x > canvas.width || p.y < 0 || p.y > canvas.height) {
-        p.x = (p.x + canvas.width) % canvas.width;
-        p.y = (p.y + canvas.height) % canvas.height;
-      }
-
-      p.hue = (vortex.hue + dist * 0.35 + time * 0.015) % 360;
-      ctx.fillStyle = `hsla(${p.hue} 95% 67% / 0.8)`;
+      const sat = 80 + Math.min(20, Math.abs(vector.y) * 20);
+      const light = 58 + Math.min(20, measuredCount * 3);
+      ctx.fillStyle = `hsla(${(hue + dist * 0.5 + time * 0.03) % 360} ${sat}% ${light}% / 0.82)`;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 1.8 + Math.abs(vortex.vector.y) * 1.3, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 1.6 + Math.abs(vector.y) * 1.2, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    const speedLabel = spin > 0.055 ? "fast" : spin > 0.035 ? "med" : "slow";
+    ctx.fillStyle = "rgba(220,230,255,0.82)";
+    ctx.fillText(`${direction > 0 ? "cw" : "ccw"} ${speedLabel}`, 8, canvas.height - 8);
   });
 }
 
