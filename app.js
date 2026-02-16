@@ -471,78 +471,128 @@ function drawFluidStage(vectors, measured) {
   };
   resize();
 
-  // Always represent all qubits in the fluid field.
   const qubits = vectors.map((v, q) => ({ q, ...v }));
-  const cols = Math.ceil(Math.sqrt(Math.max(1, qubits.length)));
-  const rows = Math.ceil(qubits.length / cols);
-  const cellW = fluidStageCanvas.clientWidth / cols;
-  const cellH = fluidStageCanvas.clientHeight / rows;
+  if (!qubits.length) {
+    ctx.fillStyle = "#0b1529";
+    ctx.fillRect(0, 0, fluidStageCanvas.clientWidth, fluidStageCanvas.clientHeight);
+    return;
+  }
 
-  // Subtle qubit anchors that influence local flow direction/speed.
-  const anchors = qubits.map((qubit, idx) => {
-    const col = idx % cols;
-    const row = Math.floor(idx / cols);
-    const measuredWeight = 1 + measured.filter((m) => m.q === qubit.q).length * 0.28;
+  const laneTop = 42;
+  const laneBottom = 20;
+  const laneHeight = Math.max(24, (fluidStageCanvas.clientHeight - laneTop - laneBottom) / qubits.length);
+  const laneMap = qubits.map((qubit, idx) => {
+    const measuredCount = measured.filter((m) => m.q === qubit.q).length;
+    const centerY = laneTop + laneHeight * (idx + 0.5);
     return {
-      q: qubit.q,
-      x: col * cellW + cellW * 0.5,
-      y: row * cellH + cellH * 0.5,
-      strength: (0.16 + 0.22 * Math.abs(qubit.y)) * measuredWeight,
-      driftX: qubit.x * 0.9,
-      driftY: -qubit.z * 0.9,
-      hue: ((Math.atan2(qubit.y, qubit.x) * 180) / Math.PI + 360) % 360,
+      ...qubit,
+      blochX: qubit.x,
+      blochY: qubit.y,
+      blochZ: qubit.z,
+      centerY,
+      measuredCount,
+      speed: 0.45 + Math.abs(qubit.y) * 1.55 + measuredCount * 0.2,
+      wobble: 7 + (1 - Math.abs(qubit.z)) * 16,
+      direction: qubit.x >= 0 ? 1 : -1,
+      hueA: 200 + qubit.p1 * 140,
+      hueB: 300 - qubit.p1 * 120,
     };
   });
 
-  const particles = Array.from({ length: Math.max(2200, qubits.length * 300) }, (_, i) => ({
-    x: Math.random() * fluidStageCanvas.clientWidth,
-    y: Math.random() * fluidStageCanvas.clientHeight,
-    vx: (Math.random() - 0.5) * 0.45,
-    vy: (Math.random() - 0.5) * 0.45,
-    life: Math.random(),
-    seed: i * 0.013,
+  const pulses = measured.map((m, i) => ({
+    q: m.q,
+    t0: i * 90,
+    strength: 0.7 + m.p1 * 0.6,
   }));
+
+  const particles = Array.from({ length: Math.max(2600, qubits.length * 360) }, (_, i) => {
+    const lane = laneMap[i % laneMap.length];
+    return {
+      laneIndex: i % laneMap.length,
+      x: Math.random() * fluidStageCanvas.clientWidth,
+      y: lane.centerY + (Math.random() - 0.5) * laneHeight * 0.75,
+      vx: 0,
+      vy: 0,
+      life: Math.random(),
+      seed: i * 0.017,
+    };
+  });
 
   const onResize = () => resize();
   window.addEventListener("resize", onResize);
 
   state.fluidStageStop = createAnimationLoop((time) => {
     const w = fluidStageCanvas.clientWidth;
-    const h = fluidStageCanvas.clientHeight;
 
-    // Transparent fade for water-like trails.
-    ctx.fillStyle = "rgba(5, 10, 18, 0.13)";
-    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(5, 10, 18, 0.11)";
+    ctx.fillRect(0, 0, w, fluidStageCanvas.clientHeight);
 
-    // Minimal anchor marks so all qubits are represented, without heavy ornamentation.
-    anchors.forEach((a) => {
-      ctx.fillStyle = "rgba(205, 222, 255, 0.18)";
+    laneMap.forEach((lane) => {
+      const grad = ctx.createLinearGradient(0, lane.centerY, w, lane.centerY);
+      grad.addColorStop(0, `hsla(${lane.hueA} 85% 60% / 0.03)`);
+      grad.addColorStop(0.5, `hsla(${lane.hueB} 85% 60% / 0.12)`);
+      grad.addColorStop(1, `hsla(${lane.hueA} 85% 60% / 0.03)`);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, lane.centerY - laneHeight * 0.42, w, laneHeight * 0.84);
+
+      ctx.strokeStyle = "rgba(140, 172, 255, 0.12)";
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.arc(a.x, a.y, 2.2, 0, Math.PI * 2);
+      ctx.moveTo(0, lane.centerY);
+      ctx.lineTo(w, lane.centerY);
+      ctx.stroke();
+
+      const arrowX = lane.direction > 0 ? w - 26 : 26;
+      const arrowTail = lane.direction > 0 ? arrowX - 12 : arrowX + 12;
+      ctx.strokeStyle = "rgba(220, 235, 255, 0.7)";
+      ctx.beginPath();
+      ctx.moveTo(arrowTail, lane.centerY);
+      ctx.lineTo(arrowX, lane.centerY);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(arrowX, lane.centerY);
+      ctx.lineTo(arrowX - lane.direction * 4, lane.centerY - 3);
+      ctx.lineTo(arrowX - lane.direction * 4, lane.centerY + 3);
+      ctx.closePath();
+      ctx.fillStyle = "rgba(220, 235, 255, 0.7)";
       ctx.fill();
     });
 
+    pulses.forEach((pulse) => {
+      const lane = laneMap.find((item) => item.q === pulse.q);
+      if (!lane) return;
+      const phase = ((time * 0.09 + pulse.t0) % (w + 160)) - 80;
+      const r = 12 + pulse.strength * 16;
+      ctx.strokeStyle = `hsla(${lane.hueA} 95% 72% / 0.33)`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(phase, lane.centerY, r, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+
+    ctx.fillStyle = "rgba(220,230,255,0.8)";
+    ctx.font = "12px Inter, system-ui, sans-serif";
+    ctx.fillText("Legend: row=qubit, arrow=x direction, waviness=z coherence, speed=|y|, color=p(|1⟩), circles=measure pulses", 10, 18);
+
+    laneMap.forEach((lane) => {
+      ctx.fillStyle = "rgba(227, 239, 255, 0.9)";
+      ctx.fillText(`q${lane.q}  p1:${lane.p1.toFixed(2)}  x:${lane.blochX.toFixed(2)}  y:${lane.blochY.toFixed(2)}  z:${lane.blochZ.toFixed(2)}  m:${lane.measuredCount}`, 8, lane.centerY - 6);
+    });
+
     particles.forEach((p) => {
-      // Smooth background flow field (advection-like).
-      const baseAngle =
-        Math.sin((p.y + time * 0.05) * 0.004 + p.seed) +
-        Math.cos((p.x - time * 0.04) * 0.004 - p.seed * 0.5);
-      let fx = Math.cos(baseAngle) * 0.07;
-      let fy = Math.sin(baseAngle) * 0.07;
-      let colorHue = 205;
+      const lane = laneMap[p.laneIndex % laneMap.length];
+      const dxCenter = p.y - lane.centerY;
+      const localWave = Math.sin((p.x * 0.008) + time * 0.0015 * lane.direction + p.seed) * lane.wobble;
+      const wavePull = (lane.centerY + localWave - p.y) * 0.007;
+      const flowX = lane.direction * lane.speed * (0.12 + Math.abs(lane.blochX) * 0.1);
 
-      // Qubit influences blend into the flow locally.
-      anchors.forEach((a) => {
-        const dx = p.x - a.x;
-        const dy = p.y - a.y;
-        const dist2 = dx * dx + dy * dy + 120;
-        const inv = a.strength / dist2;
+      let fx = flowX;
+      let fy = wavePull - dxCenter * 0.0022;
 
-        // Soft rotational plus directional drift, no vortex cores.
-        fx += (-dy * 0.12) * inv + a.driftX * inv * 0.9;
-        fy += (dx * 0.12) * inv + a.driftY * inv * 0.9;
-        colorHue = (colorHue + a.hue * inv * 1800) % 360;
-      });
+      if (lane.measuredCount > 0) {
+        const pulseWave = Math.sin((p.x * 0.015) - time * 0.003 + p.seed) * 0.09 * lane.measuredCount;
+        fy += pulseWave;
+      }
 
       p.vx = p.vx * 0.965 + fx;
       p.vy = p.vy * 0.965 + fy;
@@ -552,21 +602,27 @@ function drawFluidStage(vectors, measured) {
       p.x += p.vx;
       p.y += p.vy;
 
-      if (p.x < 0) p.x += w;
-      if (p.x > w) p.x -= w;
-      if (p.y < 0) p.y += h;
-      if (p.y > h) p.y -= h;
+      if (p.x < -40 || p.x > w + 40) {
+        p.x = lane.direction > 0 ? -20 : w + 20;
+        p.y = lane.centerY + (Math.random() - 0.5) * laneHeight * 0.8;
+      }
+
+      if (p.y < lane.centerY - laneHeight * 0.6 || p.y > lane.centerY + laneHeight * 0.6) {
+        p.y = lane.centerY + (Math.random() - 0.5) * laneHeight * 0.35;
+        p.vy *= 0.3;
+      }
 
       p.life += 0.0026;
       if (p.life > 1) {
         p.life = 0;
-        p.x = Math.random() * w;
-        p.y = Math.random() * h;
+        p.x = lane.direction > 0 ? Math.random() * (w * 0.35) : w - Math.random() * (w * 0.35);
+        p.y = lane.centerY + (Math.random() - 0.5) * laneHeight * 0.75;
       }
 
       const alpha = 0.25 + 0.45 * (1 - p.life);
-      ctx.strokeStyle = `hsla(${(colorHue + 360) % 360} 95% 70% / ${alpha.toFixed(3)})`;
-      ctx.lineWidth = 1.05;
+      const blendHue = lane.hueA * (1 - p.life) + lane.hueB * p.life;
+      ctx.strokeStyle = `hsla(${blendHue.toFixed(1)} 96% 72% / ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1.1;
       ctx.beginPath();
       ctx.moveTo(px, py);
       ctx.lineTo(p.x, p.y);

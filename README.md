@@ -12,7 +12,8 @@ A minimal quantum drag-and-drop circuit UI with an in-browser simulator and two 
 - Convert two `X` placements in the same column into a **CNOT** pair.
 - Run the circuit on demand with **Run Circuit**.
 - Right panel always shows illustrated Bloch spheres for qubit states.
-- Bottom full-width canvas renders a minimal water-like particle flow visualization representing all qubits.
+- Bottom full-width canvas renders a minimal water-like particle flow where **each horizontal lane is one qubit**.
+- Visual mapping: flow direction = Bloch `x`, waviness = Bloch `z`, speed = `|Bloch y|`, color = `P(|1⟩)`, and measurement gates add traveling pulse rings.
 
 ## Run locally
 
