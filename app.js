@@ -7,7 +7,7 @@ const state = {
   grid: [],
   draggedGate: null,
   runCache: null,
-  animationStops: [],
+  fluidStageStop: null,
 };
 
 const gatePalette = document.getElementById("gatePalette");
@@ -18,8 +18,8 @@ const qubitCountInput = document.getElementById("qubitCount");
 const timelineLengthInput = document.getElementById("timelineLength");
 const resizeButton = document.getElementById("resizeButton");
 const resultSummary = document.getElementById("resultSummary");
-const vizMode = document.getElementById("vizMode");
 const visualizationContainer = document.getElementById("visualizationContainer");
+const fluidStageCanvas = document.getElementById("fluidStageCanvas");
 
 function emptyGrid() {
   return Array.from({ length: state.qubitCount }, () => Array(state.timelineLength).fill(null));
@@ -213,8 +213,8 @@ function setGridSize() {
   state.runCache = null;
   renderGrid();
   resultSummary.textContent = "Grid resized. Rebuild and run your circuit.";
-  stopVisualAnimations();
   visualizationContainer.innerHTML = "";
+  stopFluidStageAnimation();
 }
 
 function simulateCircuit() {
@@ -381,38 +381,15 @@ function getBlochFromState(re, im, n, q) {
   };
 }
 
-function stopVisualAnimations() {
-  state.animationStops.forEach((stop) => stop());
-  state.animationStops = [];
-}
-
-function trackAnimation(stop) {
-  if (typeof stop === "function") {
-    state.animationStops.push(stop);
+function stopFluidStageAnimation() {
+  if (typeof state.fluidStageStop === "function") {
+    state.fluidStageStop();
+    state.fluidStageStop = null;
   }
 }
 
-function drawVisualizations(vectors, measured) {
-  stopVisualAnimations();
+function drawVisualizations(vectors) {
   visualizationContainer.innerHTML = "";
-
-  if (vizMode.value === "fluid") {
-    vectors.forEach((v, index) => {
-      const measuredCount = measured.filter((m) => m.q === index).length;
-      const card = document.createElement("article");
-      card.className = "viz-card";
-      const label = document.createElement("div");
-      label.textContent = `q${index} vortex | ${v.x >= 0 ? "cw" : "ccw"} | p(1)=${v.p1.toFixed(3)}`;
-      const canvas = document.createElement("canvas");
-      canvas.width = 220;
-      canvas.height = 220;
-      card.append(label, canvas);
-      visualizationContainer.appendChild(card);
-      trackAnimation(drawFluidBlackHole(canvas, v, index, measuredCount));
-    });
-    return;
-  }
-
   vectors.forEach((v, index) => {
     const card = document.createElement("article");
     card.className = "viz-card";
@@ -423,10 +400,7 @@ function drawVisualizations(vectors, measured) {
     canvas.height = 220;
     card.append(label, canvas);
     visualizationContainer.appendChild(card);
-
-    if (vizMode.value === "bloch") drawBloch(canvas, v);
-    if (vizMode.value === "heatmap") trackAnimation(drawHeatmapSphere(canvas, v));
-    if (vizMode.value === "qsphere") trackAnimation(drawQSphere(canvas, v, index, vectors.length));
+    drawBloch(canvas, v);
   });
 }
 
@@ -445,23 +419,25 @@ function drawBloch(canvas, v) {
   ctx.ellipse(c, c, r, r * 0.28, 0, 0, Math.PI * 2);
   ctx.stroke();
   ctx.beginPath();
+  ctx.moveTo(c - r, c);
+  ctx.lineTo(c + r, c);
   ctx.moveTo(c, c - r);
   ctx.lineTo(c, c + r);
   ctx.stroke();
 
   const px = c + v.x * r;
-  const py = c - v.z * r;
+  const py = c - v.z * r - v.y * (r * 0.24);
   ctx.strokeStyle = "#7bf8d6";
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(c, c);
   ctx.lineTo(px, py);
   ctx.stroke();
-}
 
-function canUseWebGL() {
-  const probe = document.createElement("canvas");
-  return Boolean(probe.getContext("webgl") || probe.getContext("experimental-webgl"));
+  ctx.fillStyle = "#7bf8d6";
+  ctx.beginPath();
+  ctx.arc(px, py, 4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function createAnimationLoop(drawFrame) {
@@ -479,163 +455,129 @@ function createAnimationLoop(drawFrame) {
   };
 }
 
-function drawHeatmapSphere(canvas, v) {
-  if (!canUseWebGL()) {
-    drawBloch(canvas, v);
-    return null;
-  }
-  const ctx = canvas.getContext("2d");
+function drawFluidStage(vectors, measured) {
+  stopFluidStageAnimation();
+  if (!fluidStageCanvas) return;
+  const ctx = fluidStageCanvas.getContext("2d");
+  if (!ctx) return;
 
-  return createAnimationLoop((time) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const points = 420;
-    for (let i = 0; i < points; i++) {
-      const progress = i / points;
-      const theta = progress * Math.PI * 2 + time * 0.0005;
-      const wobble = Math.sin(time * 0.0015 + i * 0.13) * 0.4;
-      const phi = Math.acos(Math.max(-1, Math.min(1, 2 * progress - 1 + wobble * 0.1)));
-      const x = Math.sin(phi) * Math.cos(theta);
-      const y = Math.sin(phi) * Math.sin(theta);
-      const z = Math.cos(phi);
-      const intensity = Math.max(0.12, 0.5 + 0.5 * (x * v.x + y * v.y + z * v.z));
-      const px = canvas.width / 2 + x * 70;
-      const py = canvas.height / 2 + y * 70;
-      const radius = 1.5 + intensity * 1.8;
-      ctx.fillStyle = `rgba(${Math.floor(255 * intensity)}, ${Math.floor(90 + 120 * (1 - intensity))}, 255, 0.7)`;
-      ctx.beginPath();
-      ctx.arc(px, py, radius, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  });
-}
+  const dpr = window.devicePixelRatio || 1;
+  const resize = () => {
+    const w = Math.max(900, Math.floor(fluidStageCanvas.clientWidth));
+    const h = Math.max(380, Math.floor(fluidStageCanvas.clientHeight));
+    fluidStageCanvas.width = Math.floor(w * dpr);
+    fluidStageCanvas.height = Math.floor(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  resize();
 
-function drawQSphere(canvas, v, index, total) {
-  if (!canUseWebGL()) {
-    drawBloch(canvas, v);
-    return null;
-  }
-  const ctx = canvas.getContext("2d");
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const r = canvas.width * 0.4;
+  const activeQubits = measured.length
+    ? Array.from(new Set(measured.map((m) => m.q))).map((q) => ({ q, ...vectors[q] }))
+    : vectors.map((v, q) => ({ q, ...v }));
 
-  return createAnimationLoop((time) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.strokeStyle = "#778bd6";
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.stroke();
+  const cols = Math.ceil(Math.sqrt(Math.max(1, activeQubits.length)));
+  const rows = Math.ceil(activeQubits.length / cols);
+  const cellW = fluidStageCanvas.clientWidth / cols;
+  const cellH = fluidStageCanvas.clientHeight / rows;
 
-    const phases = [v.x, v.y, v.z, v.p1];
-    phases.forEach((phase, i) => {
-      const spin = time * 0.0008 * (0.8 + i * 0.2);
-      const angle = (i / phases.length) * Math.PI * 2 + index * 0.2 + spin;
-      const pr = Math.max(0.15, Math.abs(phase));
-      const pulse = 0.7 + 0.3 * Math.sin(time * 0.003 + i + index * 0.4);
-      const px = cx + Math.cos(angle) * r * pr;
-      const py = cy + Math.sin(angle) * r * pr;
-      ctx.fillStyle = `hsl(${(phase * 180 + 360 + time * 0.03) % 360} 90% 65%)`;
-      ctx.beginPath();
-      ctx.arc(px, py, (5 + 7 * pr) * pulse, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    ctx.fillStyle = "#9eb1ff";
-    ctx.fillText(`state ${index + 1}/${total}`, 8, canvas.height - 10);
-  });
-}
-
-function drawFluidBlackHole(canvas, vector, index, measuredCount) {
-  if (!canUseWebGL()) {
-    drawBloch(canvas, vector);
-    return null;
-  }
-  const ctx = canvas.getContext("2d");
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const baseRadius = Math.min(canvas.width, canvas.height) * 0.14;
-
-  const direction = vector.x >= 0 ? 1 : -1; // clockwise / anticlockwise
-  const spin = 0.018 + Math.abs(vector.y) * 0.055 + measuredCount * 0.015; // fast / slow
-  const pull = 0.010 + Math.max(0, vector.p1) * 0.022;
-  const hue = ((Math.atan2(vector.y, vector.x) * 180) / Math.PI + 360) % 360;
-
-  const particles = Array.from({ length: 160 }, (_, i) => {
-    const angle = Math.random() * Math.PI * 2;
-    const dist = baseRadius * (1.5 + Math.random() * 3.6);
+  const vortices = activeQubits.map((qubit, idx) => {
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    const mx = measured.filter((m) => m.q === qubit.q).length;
+    const cx = col * cellW + cellW * 0.5;
+    const cy = row * cellH + cellH * 0.5;
     return {
-      x: cx + Math.cos(angle) * dist,
-      y: cy + Math.sin(angle) * dist,
-      vx: (Math.random() - 0.5) * 0.2,
-      vy: (Math.random() - 0.5) * 0.2,
-      phase: i * 0.03,
+      q: qubit.q,
+      x: cx,
+      y: cy,
+      dir: qubit.x >= 0 ? 1 : -1,
+      spin: 0.016 + Math.abs(qubit.y) * 0.05 + mx * 0.012,
+      pull: 0.009 + qubit.p1 * 0.02,
+      radius: Math.min(cellW, cellH) * (0.14 + Math.abs(qubit.z) * 0.08),
+      hue: ((Math.atan2(qubit.y, qubit.x) * 180) / Math.PI + 360) % 360,
     };
   });
 
-  return createAnimationLoop((time) => {
-    ctx.fillStyle = "rgba(4, 8, 18, 0.28)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const particles = Array.from({ length: Math.max(900, vortices.length * 230) }, (_, i) => {
+    const v = vortices[i % vortices.length];
+    const a = Math.random() * Math.PI * 2;
+    const d = v.radius * (1.5 + Math.random() * 4.2);
+    return {
+      x: v.x + Math.cos(a) * d,
+      y: v.y + Math.sin(a) * d,
+      vx: (Math.random() - 0.5) * 0.22,
+      vy: (Math.random() - 0.5) * 0.22,
+      target: i % vortices.length,
+      phase: Math.random() * Math.PI * 2,
+    };
+  });
 
-    const glow = ctx.createRadialGradient(cx, cy, baseRadius * 0.5, cx, cy, baseRadius * 3.5);
-    glow.addColorStop(0, `hsla(${hue} 95% 60% / 0.30)`);
-    glow.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(cx, cy, baseRadius * 3.5, 0, Math.PI * 2);
-    ctx.fill();
+  const removeResize = () => resize();
+  window.addEventListener("resize", removeResize);
 
-    const corePulse = 1 + 0.08 * Math.sin(time * 0.004 + index);
-    ctx.fillStyle = "rgba(2, 3, 10, 0.98)";
-    ctx.beginPath();
-    ctx.arc(cx, cy, baseRadius * corePulse, 0, Math.PI * 2);
-    ctx.fill();
+  state.fluidStageStop = createAnimationLoop((time) => {
+    ctx.fillStyle = "rgba(4, 8, 18, 0.18)";
+    ctx.fillRect(0, 0, fluidStageCanvas.clientWidth, fluidStageCanvas.clientHeight);
 
-    ctx.strokeStyle = `hsla(${hue} 95% 72% / 0.65)`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(cx, cy, baseRadius * 1.7, 0, Math.PI * 2);
-    ctx.stroke();
+    vortices.forEach((v) => {
+      const glow = ctx.createRadialGradient(v.x, v.y, v.radius * 0.5, v.x, v.y, v.radius * 5.5);
+      glow.addColorStop(0, `hsla(${v.hue} 95% 62% / 0.22)`);
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, v.radius * 5.5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(1, 2, 10, 0.96)";
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, v.radius * (1 + 0.08 * Math.sin(time * 0.003 + v.q)), 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(220,230,255,0.72)";
+      ctx.fillText(`q${v.q} ${v.dir > 0 ? "cw" : "ccw"}`, v.x - 24, v.y + v.radius * 6.1);
+    });
 
     particles.forEach((p) => {
-      const dx = p.x - cx;
-      const dy = p.y - cy;
+      const v = vortices[p.target];
+      const dx = p.x - v.x;
+      const dy = p.y - v.y;
       const dist = Math.hypot(dx, dy) + 0.0001;
+      const tx = (-dy / dist) * v.dir;
+      const ty = (dx / dist) * v.dir;
+      const inwardX = (-dx / dist) * v.pull;
+      const inwardY = (-dy / dist) * v.pull;
+      const noise = Math.sin(time * 0.002 + p.phase + dist * 0.02) * 0.012;
 
-      const tx = (-dy / dist) * direction;
-      const ty = (dx / dist) * direction;
-      const inwardX = (-dx / dist) * pull;
-      const inwardY = (-dy / dist) * pull;
-      const wobble = Math.sin(time * 0.002 + p.phase) * 0.02;
-
-      p.vx += tx * spin + inwardX + wobble * vector.z * 0.35;
-      p.vy += ty * spin + inwardY + wobble * vector.y * 0.35;
-      p.vx *= 0.986;
-      p.vy *= 0.986;
+      p.vx += tx * v.spin + inwardX + noise;
+      p.vy += ty * v.spin + inwardY + noise;
+      p.vx *= 0.988;
+      p.vy *= 0.988;
       p.x += p.vx;
       p.y += p.vy;
 
-      const escapeRadius = baseRadius * 4.8;
-      if (dist < baseRadius * 0.9 || dist > escapeRadius) {
-        const respawnAngle = Math.random() * Math.PI * 2;
-        const respawnDist = baseRadius * (1.8 + Math.random() * 3.0);
-        p.x = cx + Math.cos(respawnAngle) * respawnDist;
-        p.y = cy + Math.sin(respawnAngle) * respawnDist;
+      const cap = Math.min(cellW, cellH) * 0.85;
+      if (dist < v.radius * 0.9 || dist > cap) {
+        const a = Math.random() * Math.PI * 2;
+        const d = v.radius * (2 + Math.random() * 4.2);
+        p.x = v.x + Math.cos(a) * d;
+        p.y = v.y + Math.sin(a) * d;
         p.vx = (Math.random() - 0.5) * 0.2;
         p.vy = (Math.random() - 0.5) * 0.2;
       }
 
-      const sat = 80 + Math.min(20, Math.abs(vector.y) * 20);
-      const light = 58 + Math.min(20, measuredCount * 3);
-      ctx.fillStyle = `hsla(${(hue + dist * 0.5 + time * 0.03) % 360} ${sat}% ${light}% / 0.82)`;
+      ctx.fillStyle = `hsla(${(v.hue + dist * 0.4 + time * 0.02) % 360} 95% 66% / 0.78)`;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 1.6 + Math.abs(vector.y) * 1.2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 1.2 + Math.min(1.8, Math.abs(v.spin) * 26), 0, Math.PI * 2);
       ctx.fill();
     });
-
-    const speedLabel = spin > 0.055 ? "fast" : spin > 0.035 ? "med" : "slow";
-    ctx.fillStyle = "rgba(220,230,255,0.82)";
-    ctx.fillText(`${direction > 0 ? "cw" : "ccw"} ${speedLabel}`, 8, canvas.height - 8);
   });
+
+  const stop = state.fluidStageStop;
+  state.fluidStageStop = () => {
+    stop();
+    window.removeEventListener("resize", removeResize);
+    state.fluidStageStop = null;
+  };
 }
 
 runButton.addEventListener("click", () => {
@@ -649,7 +591,8 @@ runButton.addEventListener("click", () => {
     ${measuredText}<br>
     Sample probabilities: ${result.amplitudes.slice(0, 8).join(" | ")}
   `;
-  drawVisualizations(result.qubitBlochVectors, result.measured);
+  drawVisualizations(result.qubitBlochVectors);
+  drawFluidStage(result.qubitBlochVectors, result.measured);
 });
 
 clearButton.addEventListener("click", () => {
@@ -657,15 +600,10 @@ clearButton.addEventListener("click", () => {
   state.runCache = null;
   renderGrid();
   resultSummary.textContent = "Circuit cleared.";
-  stopVisualAnimations();
   visualizationContainer.innerHTML = "";
+  stopFluidStageAnimation();
 });
 
 resizeButton.addEventListener("click", setGridSize);
-vizMode.addEventListener("change", () => {
-  if (state.runCache) {
-    drawVisualizations(state.runCache.qubitBlochVectors, state.runCache.measured);
-  }
-});
 
 init();

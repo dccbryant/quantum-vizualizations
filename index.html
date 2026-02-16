@@ -12,13 +12,6 @@
     <div class="controls">
       <button id="runButton">Run Circuit</button>
       <button id="clearButton">Clear</button>
-      <label for="vizMode">Visualizations</label>
-      <select id="vizMode">
-        <option value="bloch" selected>Illustrated Bloch Spheres</option>
-        <option value="heatmap">WebGL Particle Heatmap Sphere</option>
-        <option value="qsphere">WebGL Q-Sphere</option>
-        <option value="fluid">WebGL Fluid Particle Flow</option>
-      </select>
     </div>
   </header>
 
@@ -47,9 +40,13 @@
     </section>
   </main>
 
-  <template id="gateTemplate">
-    <button class="gate" draggable="true"></button>
-  </template>
+  <section class="fluid-stage-section">
+    <div class="fluid-stage-head">
+      <h2>Measured Qubits Fluid Stage</h2>
+      <p>Full-width cinematic particle flow inspired by Navier–Stokes style advection.</p>
+    </div>
+    <canvas id="fluidStageCanvas" width="1800" height="680"></canvas>
+  </section>
 
   <script type="module" src="app.js"></script>
 </body>

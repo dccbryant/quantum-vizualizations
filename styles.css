@@ -28,14 +28,14 @@ main {
   grid-template-columns: 260px minmax(500px, 1fr) minmax(320px, 440px);
   gap: 1rem;
 }
-aside, .circuit-section, section {
+aside, .circuit-section, main section, .fluid-stage-section {
   background: color-mix(in oklab, var(--panel), black 20%);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 0.8rem;
 }
 .controls, .qubit-controls { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
-button, select, input {
+button, input {
   background: #1a2238;
   color: #f7f9ff;
   border: 1px solid #3b4868;
@@ -127,6 +127,24 @@ button, select, input {
   display: block;
   border-radius: 6px;
   background: radial-gradient(circle at 30% 30%, #19336a, #070d1a);
+}
+.fluid-stage-section {
+  margin: 0 1rem 1rem;
+  padding: 1rem;
+}
+.fluid-stage-head p {
+  margin-top: .25rem;
+  margin-bottom: .8rem;
+  opacity: .85;
+}
+#fluidStageCanvas {
+  width: 100%;
+  min-height: 52vh;
+  height: clamp(360px, 58vh, 760px);
+  display: block;
+  border-radius: 10px;
+  border: 1px solid #30405f;
+  background: radial-gradient(circle at 20% 20%, #13254f, #050910 65%);
 }
 .hint { font-size: .88rem; opacity: .8; }
 @media (max-width: 1200px) {
