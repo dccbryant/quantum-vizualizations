@@ -442,9 +442,13 @@ function drawBloch(canvas, v) {
   ctx.stroke();
 }
 
+function canUseWebGL() {
+  const probe = document.createElement("canvas");
+  return Boolean(probe.getContext("webgl") || probe.getContext("experimental-webgl"));
+}
+
 function drawHeatmapSphere(canvas, v) {
-  const gl = canvas.getContext("webgl");
-  if (!gl) return drawBloch(canvas, v);
+  if (!canUseWebGL()) return drawBloch(canvas, v);
   const points = 400;
   const data = [];
   for (let i = 0; i < points; i++) {
@@ -469,8 +473,7 @@ function drawHeatmapSphere(canvas, v) {
 }
 
 function drawQSphere(canvas, v, index, total) {
-  const gl = canvas.getContext("webgl");
-  if (!gl) return drawBloch(canvas, v);
+  if (!canUseWebGL()) return drawBloch(canvas, v);
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const cx = canvas.width / 2;
@@ -499,8 +502,7 @@ function drawQSphere(canvas, v, index, total) {
 }
 
 function drawFluidVizAllQubits(canvas, vectors, measured) {
-  const gl = canvas.getContext("webgl");
-  if (!gl) return drawBloch(canvas, { x: 0, y: 0, z: 1 });
+  if (!canUseWebGL()) return drawBloch(canvas, { x: 0, y: 0, z: 1 });
   const ctx = canvas.getContext("2d");
   const qubitBands = vectors.map((vector, index) => {
     const measuredCount = measured.filter((m) => m.q === index).length;
