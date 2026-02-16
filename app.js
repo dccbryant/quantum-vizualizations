@@ -471,111 +471,113 @@ function drawFluidStage(vectors, measured) {
   };
   resize();
 
-  const activeQubits = measured.length
-    ? Array.from(new Set(measured.map((m) => m.q))).map((q) => ({ q, ...vectors[q] }))
-    : vectors.map((v, q) => ({ q, ...v }));
-
-  const cols = Math.ceil(Math.sqrt(Math.max(1, activeQubits.length)));
-  const rows = Math.ceil(activeQubits.length / cols);
+  // Always represent all qubits in the fluid field.
+  const qubits = vectors.map((v, q) => ({ q, ...v }));
+  const cols = Math.ceil(Math.sqrt(Math.max(1, qubits.length)));
+  const rows = Math.ceil(qubits.length / cols);
   const cellW = fluidStageCanvas.clientWidth / cols;
   const cellH = fluidStageCanvas.clientHeight / rows;
 
-  const vortices = activeQubits.map((qubit, idx) => {
+  // Subtle qubit anchors that influence local flow direction/speed.
+  const anchors = qubits.map((qubit, idx) => {
     const col = idx % cols;
     const row = Math.floor(idx / cols);
-    const mx = measured.filter((m) => m.q === qubit.q).length;
-    const cx = col * cellW + cellW * 0.5;
-    const cy = row * cellH + cellH * 0.5;
+    const measuredWeight = 1 + measured.filter((m) => m.q === qubit.q).length * 0.28;
     return {
       q: qubit.q,
-      x: cx,
-      y: cy,
-      dir: qubit.x >= 0 ? 1 : -1,
-      spin: 0.016 + Math.abs(qubit.y) * 0.05 + mx * 0.012,
-      pull: 0.009 + qubit.p1 * 0.02,
-      radius: Math.min(cellW, cellH) * (0.14 + Math.abs(qubit.z) * 0.08),
+      x: col * cellW + cellW * 0.5,
+      y: row * cellH + cellH * 0.5,
+      strength: (0.16 + 0.22 * Math.abs(qubit.y)) * measuredWeight,
+      driftX: qubit.x * 0.9,
+      driftY: -qubit.z * 0.9,
       hue: ((Math.atan2(qubit.y, qubit.x) * 180) / Math.PI + 360) % 360,
     };
   });
 
-  const particles = Array.from({ length: Math.max(900, vortices.length * 230) }, (_, i) => {
-    const v = vortices[i % vortices.length];
-    const a = Math.random() * Math.PI * 2;
-    const d = v.radius * (1.5 + Math.random() * 4.2);
-    return {
-      x: v.x + Math.cos(a) * d,
-      y: v.y + Math.sin(a) * d,
-      vx: (Math.random() - 0.5) * 0.22,
-      vy: (Math.random() - 0.5) * 0.22,
-      target: i % vortices.length,
-      phase: Math.random() * Math.PI * 2,
-    };
-  });
+  const particles = Array.from({ length: Math.max(2200, qubits.length * 300) }, (_, i) => ({
+    x: Math.random() * fluidStageCanvas.clientWidth,
+    y: Math.random() * fluidStageCanvas.clientHeight,
+    vx: (Math.random() - 0.5) * 0.45,
+    vy: (Math.random() - 0.5) * 0.45,
+    life: Math.random(),
+    seed: i * 0.013,
+  }));
 
-  const removeResize = () => resize();
-  window.addEventListener("resize", removeResize);
+  const onResize = () => resize();
+  window.addEventListener("resize", onResize);
 
   state.fluidStageStop = createAnimationLoop((time) => {
-    ctx.fillStyle = "rgba(4, 8, 18, 0.18)";
-    ctx.fillRect(0, 0, fluidStageCanvas.clientWidth, fluidStageCanvas.clientHeight);
+    const w = fluidStageCanvas.clientWidth;
+    const h = fluidStageCanvas.clientHeight;
 
-    vortices.forEach((v) => {
-      const glow = ctx.createRadialGradient(v.x, v.y, v.radius * 0.5, v.x, v.y, v.radius * 5.5);
-      glow.addColorStop(0, `hsla(${v.hue} 95% 62% / 0.22)`);
-      glow.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = glow;
+    // Transparent fade for water-like trails.
+    ctx.fillStyle = "rgba(5, 10, 18, 0.13)";
+    ctx.fillRect(0, 0, w, h);
+
+    // Minimal anchor marks so all qubits are represented, without heavy ornamentation.
+    anchors.forEach((a) => {
+      ctx.fillStyle = "rgba(205, 222, 255, 0.18)";
       ctx.beginPath();
-      ctx.arc(v.x, v.y, v.radius * 5.5, 0, Math.PI * 2);
+      ctx.arc(a.x, a.y, 2.2, 0, Math.PI * 2);
       ctx.fill();
-
-      ctx.fillStyle = "rgba(1, 2, 10, 0.96)";
-      ctx.beginPath();
-      ctx.arc(v.x, v.y, v.radius * (1 + 0.08 * Math.sin(time * 0.003 + v.q)), 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.fillStyle = "rgba(220,230,255,0.72)";
-      ctx.fillText(`q${v.q} ${v.dir > 0 ? "cw" : "ccw"}`, v.x - 24, v.y + v.radius * 6.1);
     });
 
     particles.forEach((p) => {
-      const v = vortices[p.target];
-      const dx = p.x - v.x;
-      const dy = p.y - v.y;
-      const dist = Math.hypot(dx, dy) + 0.0001;
-      const tx = (-dy / dist) * v.dir;
-      const ty = (dx / dist) * v.dir;
-      const inwardX = (-dx / dist) * v.pull;
-      const inwardY = (-dy / dist) * v.pull;
-      const noise = Math.sin(time * 0.002 + p.phase + dist * 0.02) * 0.012;
+      // Smooth background flow field (advection-like).
+      const baseAngle =
+        Math.sin((p.y + time * 0.05) * 0.004 + p.seed) +
+        Math.cos((p.x - time * 0.04) * 0.004 - p.seed * 0.5);
+      let fx = Math.cos(baseAngle) * 0.07;
+      let fy = Math.sin(baseAngle) * 0.07;
+      let colorHue = 205;
 
-      p.vx += tx * v.spin + inwardX + noise;
-      p.vy += ty * v.spin + inwardY + noise;
-      p.vx *= 0.988;
-      p.vy *= 0.988;
+      // Qubit influences blend into the flow locally.
+      anchors.forEach((a) => {
+        const dx = p.x - a.x;
+        const dy = p.y - a.y;
+        const dist2 = dx * dx + dy * dy + 120;
+        const inv = a.strength / dist2;
+
+        // Soft rotational plus directional drift, no vortex cores.
+        fx += (-dy * 0.12) * inv + a.driftX * inv * 0.9;
+        fy += (dx * 0.12) * inv + a.driftY * inv * 0.9;
+        colorHue = (colorHue + a.hue * inv * 1800) % 360;
+      });
+
+      p.vx = p.vx * 0.965 + fx;
+      p.vy = p.vy * 0.965 + fy;
+
+      const px = p.x;
+      const py = p.y;
       p.x += p.vx;
       p.y += p.vy;
 
-      const cap = Math.min(cellW, cellH) * 0.85;
-      if (dist < v.radius * 0.9 || dist > cap) {
-        const a = Math.random() * Math.PI * 2;
-        const d = v.radius * (2 + Math.random() * 4.2);
-        p.x = v.x + Math.cos(a) * d;
-        p.y = v.y + Math.sin(a) * d;
-        p.vx = (Math.random() - 0.5) * 0.2;
-        p.vy = (Math.random() - 0.5) * 0.2;
+      if (p.x < 0) p.x += w;
+      if (p.x > w) p.x -= w;
+      if (p.y < 0) p.y += h;
+      if (p.y > h) p.y -= h;
+
+      p.life += 0.0026;
+      if (p.life > 1) {
+        p.life = 0;
+        p.x = Math.random() * w;
+        p.y = Math.random() * h;
       }
 
-      ctx.fillStyle = `hsla(${(v.hue + dist * 0.4 + time * 0.02) % 360} 95% 66% / 0.78)`;
+      const alpha = 0.25 + 0.45 * (1 - p.life);
+      ctx.strokeStyle = `hsla(${(colorHue + 360) % 360} 95% 70% / ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1.05;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 1.2 + Math.min(1.8, Math.abs(v.spin) * 26), 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(px, py);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
     });
   });
 
   const stop = state.fluidStageStop;
   state.fluidStageStop = () => {
     stop();
-    window.removeEventListener("resize", removeResize);
+    window.removeEventListener("resize", onResize);
     state.fluidStageStop = null;
   };
 }
