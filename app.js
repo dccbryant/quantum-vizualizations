@@ -9,7 +9,7 @@ const state = {
   runCache: null,
   fluidStageStop: null,
   visualizationMode: "angled3d",
-  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.15 },
+  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.7 },
   cameraDragging: false,
   cameraLastX: 0,
   cameraLastY: 0,
@@ -720,38 +720,33 @@ function drawFluidStage(vectors, measured) {
       ctx.fillRect(0, 0, w, h);
 
       const sorted = [];
+      const landscapeCamera = { ...state.camera, zoom: state.camera.zoom * 1.25 };
       for (const cell of landscapeGrid) {
         let height = 0;
         let hue = 220;
         fieldSources.forEach((s) => {
           const dx = cell.x - s.x;
           const dz = cell.z - s.y;
-          const dist = Math.hypot(dx, dz) + 28;
-          height += (s.boost * 220) / dist;
-          hue = (hue + s.hue / dist * 12) % 360;
+          const dist = Math.hypot(dx, dz) + 34;
+          const polarity = s.z >= 0 ? 1 : -1;
+          height += polarity * (s.boost * (140 + Math.abs(s.z) * 0.55)) / dist;
+          hue = (hue + s.hue / dist * 18) % 360;
         });
-        height += Math.sin((cell.x + time * 0.09) * 0.01) * 12 + Math.cos((cell.z - time * 0.07) * 0.01) * 10;
-        const p = project3DPoint(cell.x, height - 80, cell.z, w, h);
+        height *= 170;
+        height += Math.sin((cell.x + time * 0.09) * 0.01) * 18 + Math.cos((cell.z - time * 0.07) * 0.01) * 14;
+        const p = project3DPoint(cell.x, height, cell.z, w, h, landscapeCamera);
         sorted.push({ p, hue, height });
       }
       sorted.sort((a, b) => a.p.depth - b.p.depth);
       sorted.forEach((node) => {
-        const r = 0.8 + node.p.depth * 2.4;
-        const alpha = 0.18 + Math.min(0.46, node.height / 420);
-        ctx.fillStyle = `hsla(${(node.hue + 360) % 360} 92% 70% / ${alpha.toFixed(3)})`;
+        const r = 0.95 + node.p.depth * 2.8;
+        const crest = Math.max(0, node.height);
+        const trough = Math.max(0, -node.height);
+        const alpha = 0.14 + Math.min(0.5, (crest + trough) / 260);
+        const lightness = 56 + Math.min(26, crest / 12) - Math.min(18, trough / 14);
+        ctx.fillStyle = `hsla(${(node.hue + 360) % 360} 92% ${lightness.toFixed(1)}% / ${alpha.toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(node.p.x, node.p.y, r, 0, Math.PI * 2);
-        ctx.fill();
-      });
-
-      fieldSources.forEach((s, idx) => {
-        const marker = project3DPoint(s.x, 35 + Math.sin(time * 0.003 + idx) * 8, s.y, w, h);
-        const glow = ctx.createRadialGradient(marker.x, marker.y, 1, marker.x, marker.y, 32);
-        glow.addColorStop(0, `hsla(${s.hue} 95% 72% / 0.36)`);
-        glow.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = glow;
-        ctx.beginPath();
-        ctx.arc(marker.x, marker.y, 32, 0, Math.PI * 2);
         ctx.fill();
       });
       return;
