@@ -8,6 +8,7 @@ const state = {
   draggedGate: null,
   runCache: null,
   fluidStageStop: null,
+  visualizationMode: "angled3d",
 };
 
 const gatePalette = document.getElementById("gatePalette");
@@ -24,6 +25,10 @@ const qiskitEditor = document.getElementById("qiskitEditor");
 const applyQiskitButton = document.getElementById("applyQiskitButton");
 const syncQiskitButton = document.getElementById("syncQiskitButton");
 const qiskitStatus = document.getElementById("qiskitStatus");
+const saveQiskitButton = document.getElementById("saveQiskitButton");
+const loadQiskitButton = document.getElementById("loadQiskitButton");
+const loadQiskitFile = document.getElementById("loadQiskitFile");
+const visualizationModeSelect = document.getElementById("visualizationModeSelect");
 
 function emptyGrid() {
   return Array.from({ length: state.qubitCount }, () => Array(state.timelineLength).fill(null));
@@ -35,6 +40,7 @@ function init() {
   renderGrid();
   drawVisualizations([]);
   syncQiskitFromGrid();
+  if (visualizationModeSelect) visualizationModeSelect.value = state.visualizationMode;
 }
 
 function buildPalette() {
@@ -578,6 +584,12 @@ function createAnimationLoop(drawFrame) {
   };
 }
 
+function project3DPoint(x, y, z, w, h) {
+  const sx = w * 0.5 + x + y * 0.4;
+  const sy = h * 0.55 + y * 0.25 - z * 0.72;
+  return { x: sx, y: sy };
+}
+
 function drawFluidStage(vectors, measured) {
   stopFluidStageAnimation();
   if (!fluidStageCanvas) return;
@@ -604,28 +616,30 @@ function drawFluidStage(vectors, measured) {
   const measuredCountByQubit = new Map();
   measured.forEach((m) => measuredCountByQubit.set(m.q, (measuredCountByQubit.get(m.q) || 0) + 1));
 
-  const vortices = qubits.map((qubit, i) => {
-    const angle = (i / qubits.length) * Math.PI * 2;
-    const radius = Math.min(fluidStageCanvas.clientWidth, fluidStageCanvas.clientHeight) * (0.2 + 0.22 * (i % 3) / 2);
-    const measuredWeight = 1 + (measuredCountByQubit.get(qubit.q) || 0) * 0.25;
-    return {
-      x: fluidStageCanvas.clientWidth * 0.5 + Math.cos(angle) * radius,
-      y: fluidStageCanvas.clientHeight * 0.5 + Math.sin(angle) * radius * 0.58,
-      swirl: (qubit.x >= 0 ? 1 : -1) * (0.32 + Math.abs(qubit.y) * 0.9) * measuredWeight,
-      pull: 0.08 + (1 - Math.abs(qubit.z)) * 0.2,
-      hue: (210 + qubit.p1 * 130 + i * 18) % 360,
-      pulse: measuredWeight,
-    };
-  });
-
-  const particles = Array.from({ length: Math.max(3200, qubits.length * 420) }, (_, i) => ({
-    x: Math.random() * fluidStageCanvas.clientWidth,
-    y: Math.random() * fluidStageCanvas.clientHeight,
+  const particles = Array.from({ length: Math.max(3400, qubits.length * 460) }, (_, i) => ({
+    x: (Math.random() - 0.5) * fluidStageCanvas.clientWidth * 0.86,
+    y: (Math.random() - 0.5) * fluidStageCanvas.clientHeight * 0.74,
+    z: (Math.random() - 0.5) * 260,
     vx: 0,
     vy: 0,
+    vz: 0,
     life: Math.random(),
-    seed: i * 0.011,
+    seed: i * 0.013,
   }));
+
+  const fieldSources = qubits.map((qubit, i) => {
+    const angle = (i / qubits.length) * Math.PI * 2;
+    const rad = 130 + (i % 4) * 45;
+    return {
+      x: Math.cos(angle) * rad,
+      y: Math.sin(angle) * rad * 0.8,
+      z: qubit.z * 130,
+      driftX: qubit.x * 0.9,
+      driftY: qubit.y * 0.65,
+      hue: (200 + qubit.p1 * 120 + i * 14) % 360,
+      boost: 1 + (measuredCountByQubit.get(qubit.q) || 0) * 0.32,
+    };
+  });
 
   const onResize = () => resize();
   window.addEventListener("resize", onResize);
@@ -633,69 +647,105 @@ function drawFluidStage(vectors, measured) {
   state.fluidStageStop = createAnimationLoop((time) => {
     const w = fluidStageCanvas.clientWidth;
     const h = fluidStageCanvas.clientHeight;
+    const mode = state.visualizationMode;
 
-    ctx.fillStyle = "rgba(4, 9, 18, 0.12)";
+    ctx.fillStyle = mode === "angled3d" ? "rgba(4, 10, 22, 0.14)" : "rgba(7, 5, 20, 0.12)";
     ctx.fillRect(0, 0, w, h);
 
-    const centerWave = Math.sin(time * 0.0012) * 0.5 + 0.5;
-    const bg = ctx.createRadialGradient(w * 0.5, h * 0.5, 20, w * 0.5, h * 0.5, Math.max(w, h) * 0.6);
-    bg.addColorStop(0, `rgba(40, 78, 165, ${0.06 + centerWave * 0.06})`);
-    bg.addColorStop(1, "rgba(3, 8, 18, 0)");
-    ctx.fillStyle = bg;
+    const plane = ctx.createLinearGradient(0, h * 0.18, w, h * 0.92);
+    plane.addColorStop(0, mode === "angled3d" ? "rgba(39, 79, 160, 0.09)" : "rgba(172, 73, 255, 0.07)");
+    plane.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = plane;
     ctx.fillRect(0, 0, w, h);
+
+    if (mode === "angled3d") {
+      const axes = [
+        { a: { x: -260, y: 0, z: 0 }, b: { x: 260, y: 0, z: 0 }, color: "rgba(255,95,120,0.24)", label: "X" },
+        { a: { x: 0, y: -220, z: 0 }, b: { x: 0, y: 220, z: 0 }, color: "rgba(80,255,190,0.22)", label: "Y" },
+        { a: { x: 0, y: 0, z: -200 }, b: { x: 0, y: 0, z: 200 }, color: "rgba(104,170,255,0.25)", label: "Z" },
+      ];
+      axes.forEach((axis) => {
+        const p0 = project3DPoint(axis.a.x, axis.a.y, axis.a.z, w, h);
+        const p1 = project3DPoint(axis.b.x, axis.b.y, axis.b.z, w, h);
+        ctx.strokeStyle = axis.color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.stroke();
+        ctx.fillStyle = axis.color;
+        ctx.fillText(axis.label, p1.x + 6, p1.y - 2);
+      });
+    }
 
     particles.forEach((p) => {
-      const noiseA = Math.sin((p.x * 0.004) + time * 0.0008 + p.seed);
-      const noiseB = Math.cos((p.y * 0.0045) - time * 0.0007 - p.seed);
-      let fx = noiseA * 0.035;
-      let fy = noiseB * 0.035;
-      let hue = 212;
+      let fx = Math.sin((p.x * 0.007) + p.seed + time * 0.0008) * 0.032;
+      let fy = Math.cos((p.y * 0.007) - p.seed - time * 0.0007) * 0.032;
+      let fz = Math.sin((p.z * 0.01) + p.seed + time * 0.0004) * 0.026;
+      let hue = mode === "angled3d" ? 210 : 280;
 
-      vortices.forEach((v) => {
-        const dx = p.x - v.x;
-        const dy = p.y - v.y;
-        const dist2 = dx * dx + dy * dy + 180;
+      fieldSources.forEach((s) => {
+        const dx = p.x - s.x;
+        const dy = p.y - s.y;
+        const dz = p.z - s.z;
+        const dist2 = dx * dx + dy * dy + dz * dz + 260;
         const inv = 1 / dist2;
-        fx += (-dy * v.swirl) * inv * 28;
-        fy += (dx * v.swirl) * inv * 28;
-        fx += (-dx) * inv * v.pull * 9;
-        fy += (-dy) * inv * v.pull * 9;
-        hue = (hue + v.hue * inv * 1200) % 360;
+        fx += (-dy * s.boost * 16 + s.driftX * 20) * inv;
+        fy += (dx * s.boost * 16 + s.driftY * 18) * inv;
+        fz += (-dz * 9 + s.driftX * 10) * inv;
+        hue = (hue + s.hue * inv * 1400) % 360;
       });
 
-      p.vx = p.vx * 0.964 + fx;
-      p.vy = p.vy * 0.964 + fy;
+      if (mode === "neonstorm") {
+        fx *= 1.3;
+        fy *= 1.3;
+        fz *= 1.1;
+        hue = (hue + 45 + Math.sin(time * 0.002 + p.seed) * 25) % 360;
+      }
+
+      p.vx = p.vx * 0.965 + fx;
+      p.vy = p.vy * 0.965 + fy;
+      p.vz = p.vz * 0.965 + fz;
       p.x += p.vx;
       p.y += p.vy;
+      p.z += p.vz;
 
-      if (p.x < -20) p.x = w + 20;
-      if (p.x > w + 20) p.x = -20;
-      if (p.y < -20) p.y = h + 20;
-      if (p.y > h + 20) p.y = -20;
+      const boundsX = w * 0.56;
+      const boundsY = h * 0.46;
+      if (p.x < -boundsX) p.x = boundsX;
+      if (p.x > boundsX) p.x = -boundsX;
+      if (p.y < -boundsY) p.y = boundsY;
+      if (p.y > boundsY) p.y = -boundsY;
+      if (p.z < -260) p.z = 260;
+      if (p.z > 260) p.z = -260;
 
       p.life += 0.0022;
       if (p.life > 1) {
         p.life = 0;
-        p.x = Math.random() * w;
-        p.y = Math.random() * h;
+        p.x = (Math.random() - 0.5) * w * 0.86;
+        p.y = (Math.random() - 0.5) * h * 0.74;
+        p.z = (Math.random() - 0.5) * 260;
       }
 
-      const alpha = 0.20 + 0.45 * (1 - p.life);
-      const size = 0.9 + (1 - p.life) * 1.6;
-      ctx.fillStyle = `hsla(${(hue + 360) % 360} 95% 70% / ${alpha.toFixed(3)})`;
+      const proj = project3DPoint(p.x, p.y, p.z, w, h);
+      const depth = (p.z + 260) / 520;
+      const radius = 0.8 + depth * 1.5;
+      const alpha = (mode === "neonstorm" ? 0.24 : 0.18) + 0.42 * (1 - p.life);
+      ctx.fillStyle = `hsla(${(hue + 360) % 360} 96% 70% / ${alpha.toFixed(3)})`;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      ctx.arc(proj.x, proj.y, radius, 0, Math.PI * 2);
       ctx.fill();
     });
 
-    vortices.forEach((v) => {
-      const pulse = 0.18 + (Math.sin(time * 0.002 * v.pulse) * 0.5 + 0.5) * 0.32;
-      const glow = ctx.createRadialGradient(v.x, v.y, 1, v.x, v.y, 26);
-      glow.addColorStop(0, `hsla(${v.hue} 95% 72% / ${pulse.toFixed(3)})`);
+    fieldSources.forEach((s) => {
+      const sourcePoint = project3DPoint(s.x, s.y, s.z, w, h);
+      const glowRadius = mode === "neonstorm" ? 40 : 28;
+      const glow = ctx.createRadialGradient(sourcePoint.x, sourcePoint.y, 1, sourcePoint.x, sourcePoint.y, glowRadius);
+      glow.addColorStop(0, `hsla(${s.hue} 95% 72% / 0.28)`);
       glow.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(v.x, v.y, 26, 0, Math.PI * 2);
+      ctx.arc(sourcePoint.x, sourcePoint.y, glowRadius, 0, Math.PI * 2);
       ctx.fill();
     });
   });
@@ -740,6 +790,37 @@ applyQiskitButton.addEventListener("click", applyQiskitToGrid);
 syncQiskitButton.addEventListener("click", () => {
   syncQiskitFromGrid();
   qiskitStatus.textContent = "Qiskit code regenerated from drag/drop grid.";
+});
+
+saveQiskitButton.addEventListener("click", () => {
+  const content = qiskitEditor.value || "";
+  const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `quantum-circuit-${Date.now()}.qiskit.py`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  qiskitStatus.textContent = "Qiskit code saved to file.";
+});
+
+loadQiskitButton.addEventListener("click", () => loadQiskitFile.click());
+loadQiskitFile.addEventListener("change", async () => {
+  const file = loadQiskitFile.files?.[0];
+  if (!file) return;
+  const text = await file.text();
+  qiskitEditor.value = text;
+  qiskitStatus.textContent = `Loaded ${file.name}. Click Apply Qiskit Code to build the grid.`;
+  loadQiskitFile.value = "";
+});
+
+visualizationModeSelect.addEventListener("change", () => {
+  state.visualizationMode = visualizationModeSelect.value;
+  if (state.runCache) {
+    drawFluidStage(state.runCache.qubitBlochVectors, state.runCache.measured);
+  }
 });
 
 init();

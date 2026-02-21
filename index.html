@@ -41,6 +41,9 @@
       <div class="composer-actions">
         <button id="applyQiskitButton">Apply Qiskit Code</button>
         <button id="syncQiskitButton">Generate from Grid</button>
+        <button id="saveQiskitButton">Save Qiskit</button>
+        <button id="loadQiskitButton">Load Qiskit</button>
+        <input id="loadQiskitFile" type="file" accept=".py,.qiskit,.txt" hidden />
       </div>
       <div id="qiskitStatus" class="hint">Ready.</div>
 
@@ -55,7 +58,14 @@
   <section class="fluid-stage-section">
     <div class="fluid-stage-head">
       <h2>Unified Quantum Fluid Surface</h2>
-      <p>Simple mapping: each qubit behaves like a moving flow source. Bloch direction changes swirl direction, Bloch strength changes speed, and measurements intensify local particle density.</p>
+      <div class="fluid-controls">
+        <label for="visualizationModeSelect">Visualization</label>
+        <select id="visualizationModeSelect">
+          <option value="angled3d">Angled 3D Fluid Plane</option>
+          <option value="neonstorm">Neon Quantum Storm</option>
+        </select>
+      </div>
+      <p>Simple mapping: x sets left/right drift, y sets motion energy, z sets depth/wave lift, and measurements brighten local activity.</p>
     </div>
     <canvas id="fluidStageCanvas" width="1800" height="680"></canvas>
   </section>

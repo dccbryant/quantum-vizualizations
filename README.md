@@ -15,8 +15,10 @@ A minimal quantum drag-and-drop circuit UI with an in-browser simulator and thre
 - Use the right-side **Qiskit Composer**:
   - Generate Qiskit-like code from the drag/drop grid.
   - Apply basic Qiskit-like code back into the grid (`h/x/y/z/s/t`, `cx`, `measure`).
+  - Save composer code to a local `.qiskit.py` file and load it back later.
 - Bloch spheres are shown in a **horizontal strip below the palette/grid/composer row** for better space usage.
-- Bottom visualization is a single fluid surface influenced by all qubit states and measurements (direction≈Bloch x, speed≈|Bloch y|, coherence≈Bloch z, measurements intensify local motion).
+- Bottom visualization supports multiple modes: **Angled 3D Fluid Plane** and **Neon Quantum Storm**.
+- 3D mapping: x≈Bloch x drift, y≈Bloch y energy, z≈Bloch z depth lift, and measurements intensify nearby motion.
 
 ## Run locally
 

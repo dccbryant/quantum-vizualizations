@@ -35,7 +35,7 @@ aside, .circuit-section, .composer-section, .fluid-stage-section, .bloch-strip-s
   padding: 0.8rem;
 }
 .controls, .qubit-controls, .composer-actions { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
-button, input, textarea {
+button, input, textarea, select {
   background: #1a2238;
   color: #f7f9ff;
   border: 1px solid #3b4868;
@@ -127,6 +127,10 @@ textarea {
 }
 .fluid-stage-section { margin: 0 1rem 1rem; padding: 1rem; }
 .fluid-stage-head p { margin-top: .25rem; margin-bottom: .8rem; opacity: .85; }
+
+.fluid-controls { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.fluid-controls select { min-width: 220px; }
+
 #fluidStageCanvas {
   width: 100%;
   min-height: 52vh;
