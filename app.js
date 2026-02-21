@@ -665,8 +665,6 @@ function drawFluidStage(vectors, measured) {
 
       p.vx = p.vx * 0.964 + fx;
       p.vy = p.vy * 0.964 + fy;
-      const px = p.x;
-      const py = p.y;
       p.x += p.vx;
       p.y += p.vy;
 
@@ -682,22 +680,23 @@ function drawFluidStage(vectors, measured) {
         p.y = Math.random() * h;
       }
 
-      const alpha = 0.17 + 0.45 * (1 - p.life);
-      ctx.strokeStyle = `hsla(${(hue + 360) % 360} 95% 70% / ${alpha.toFixed(3)})`;
-      ctx.lineWidth = 1;
+      const alpha = 0.20 + 0.45 * (1 - p.life);
+      const size = 0.9 + (1 - p.life) * 1.6;
+      ctx.fillStyle = `hsla(${(hue + 360) % 360} 95% 70% / ${alpha.toFixed(3)})`;
       ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(p.x, p.y);
-      ctx.stroke();
+      ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      ctx.fill();
     });
 
     vortices.forEach((v) => {
-      const pulse = 2 + Math.sin(time * 0.002 * v.pulse) * 2;
-      ctx.strokeStyle = `hsla(${v.hue} 95% 70% / 0.20)`;
-      ctx.lineWidth = 1;
+      const pulse = 0.18 + (Math.sin(time * 0.002 * v.pulse) * 0.5 + 0.5) * 0.32;
+      const glow = ctx.createRadialGradient(v.x, v.y, 1, v.x, v.y, 26);
+      glow.addColorStop(0, `hsla(${v.hue} 95% 72% / ${pulse.toFixed(3)})`);
+      glow.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = glow;
       ctx.beginPath();
-      ctx.arc(v.x, v.y, 14 + pulse, 0, Math.PI * 2);
-      ctx.stroke();
+      ctx.arc(v.x, v.y, 26, 0, Math.PI * 2);
+      ctx.fill();
     });
   });
 
@@ -718,7 +717,8 @@ runButton.addEventListener("click", () => {
   resultSummary.innerHTML = `
     <strong>Simulation complete.</strong><br>
     ${measuredText}<br>
-    Sample probabilities: ${result.amplitudes.slice(0, 8).join(" | ")}
+    Sample probabilities: ${result.amplitudes.slice(0, 8).join(" | ")}<br>
+    Fluid mapping: direction from Bloch x, speed from Bloch y magnitude, coherence from Bloch z, measurements boost local motion.
   `;
   drawVisualizations(result.qubitBlochVectors);
   drawFluidStage(result.qubitBlochVectors, result.measured);
