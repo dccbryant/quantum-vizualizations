@@ -500,7 +500,7 @@ function applyQiskitToGrid() {
   let error = null;
 
   const parseSingle = (line, method) => {
-    const match = line.match(new RegExp(`\.\s*${method}\s*\(\s*(\d+)\s*\)`));
+    const match = line.match(new RegExp(String.raw`\.\s*${method}\s*\(\s*(\d+)\s*\)`));
     if (!match) return false;
     const q = Number(match[1]);
     ops.push({ type: method.toUpperCase(), q });
@@ -509,7 +509,7 @@ function applyQiskitToGrid() {
   };
 
   for (const raw of lines) {
-    const line = raw.trim();
+    const line = raw.trim().replace(/;$/, "");
     if (!line || line.startsWith("#") || line.startsWith("from ") || line.startsWith("import ") || line.startsWith("qc =") || line.startsWith("print(")) continue;
 
     if (["h", "x", "y", "z", "s", "t"].some((m) => parseSingle(line, m))) continue;
