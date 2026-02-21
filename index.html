@@ -31,19 +31,28 @@
         <button id="resizeButton">Apply Grid</button>
       </div>
       <div id="circuitGrid" class="circuit-grid"></div>
+      <div id="resultSummary" class="result-summary">Press <strong>Run Circuit</strong> to simulate.</div>
     </section>
 
-    <section>
-      <h2>Qubit State Output</h2>
-      <div id="resultSummary" class="result-summary">Press <strong>Run Circuit</strong> to simulate.</div>
+    <section class="composer-section">
+      <h2>Qiskit Composer</h2>
+      <p class="hint">Use basic Qiskit syntax (`h`, `x`, `y`, `z`, `s`, `t`, `cx`, `measure`) and apply to rebuild the grid.</p>
+      <textarea id="qiskitEditor" spellcheck="false"></textarea>
+      <div class="composer-actions">
+        <button id="applyQiskitButton">Apply Qiskit Code</button>
+        <button id="syncQiskitButton">Generate from Grid</button>
+      </div>
+      <div id="qiskitStatus" class="hint">Ready.</div>
+
+      <h3>Qubit Bloch Spheres</h3>
       <div id="visualizationContainer" class="viz-grid"></div>
     </section>
   </main>
 
   <section class="fluid-stage-section">
     <div class="fluid-stage-head">
-      <h2>All Qubits Fluid Stage</h2>
-      <p>Each horizontal stream is one qubit: left/right flow follows Bloch X, waviness follows Bloch Z, speed follows |Bloch Y|, color follows P(|1⟩), and measurement gates emit pulse rings.</p>
+      <h2>Unified Quantum Fluid Surface</h2>
+      <p>A single evolving fluid sheet where all qubit states blend into one dynamic field.</p>
     </div>
     <canvas id="fluidStageCanvas" width="1800" height="680"></canvas>
   </section>

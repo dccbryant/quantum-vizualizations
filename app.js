@@ -20,6 +20,10 @@ const resizeButton = document.getElementById("resizeButton");
 const resultSummary = document.getElementById("resultSummary");
 const visualizationContainer = document.getElementById("visualizationContainer");
 const fluidStageCanvas = document.getElementById("fluidStageCanvas");
+const qiskitEditor = document.getElementById("qiskitEditor");
+const applyQiskitButton = document.getElementById("applyQiskitButton");
+const syncQiskitButton = document.getElementById("syncQiskitButton");
+const qiskitStatus = document.getElementById("qiskitStatus");
 
 function emptyGrid() {
   return Array.from({ length: state.qubitCount }, () => Array(state.timelineLength).fill(null));
@@ -29,7 +33,8 @@ function init() {
   state.grid = emptyGrid();
   buildPalette();
   renderGrid();
-  drawVisualizations([], []);
+  drawVisualizations([]);
+  syncQiskitFromGrid();
 }
 
 function buildPalette() {
@@ -215,6 +220,7 @@ function setGridSize() {
   resultSummary.textContent = "Grid resized. Rebuild and run your circuit.";
   visualizationContainer.innerHTML = "";
   stopFluidStageAnimation();
+  syncQiskitFromGrid();
 }
 
 function simulateCircuit() {
@@ -440,6 +446,123 @@ function drawBloch(canvas, v) {
   ctx.fill();
 }
 
+
+function gateToQiskitMethod(gate) {
+  const map = { H: "h", X: "x", Y: "y", Z: "z", S: "s", T: "t" };
+  return map[gate] || null;
+}
+
+function syncQiskitFromGrid() {
+  if (!qiskitEditor) return;
+  const lines = [
+    "from qiskit import QuantumCircuit",
+    `qc = QuantumCircuit(${state.qubitCount}, ${state.qubitCount})`,
+    "",
+  ];
+
+  for (let t = 0; t < state.timelineLength; t++) {
+    for (let q = 0; q < state.qubitCount; q++) {
+      const gate = state.grid[q][t];
+      if (!gate) continue;
+      if (["H", "X", "Y", "Z", "S", "T"].includes(gate.type)) {
+        const method = gateToQiskitMethod(gate.type);
+        lines.push(`qc.${method}(${q})`);
+      } else if (gate.type === "CNOT_CONTROL" && Number.isInteger(gate.target)) {
+        lines.push(`qc.cx(${q}, ${gate.target})`);
+      } else if (gate.type === "M") {
+        lines.push(`qc.measure(${q}, ${q})`);
+      }
+    }
+  }
+
+  lines.push("", "print(qc)");
+  qiskitEditor.value = lines.join("\n");
+}
+
+function applyQiskitToGrid() {
+  if (!qiskitEditor) return;
+  const source = qiskitEditor.value;
+  const lines = source.split(/\r?\n/);
+
+  const ops = [];
+  let maxQubit = state.qubitCount - 1;
+  let error = null;
+
+  const parseSingle = (line, method) => {
+    const match = line.match(new RegExp(`\.\s*${method}\s*\(\s*(\d+)\s*\)`));
+    if (!match) return false;
+    const q = Number(match[1]);
+    ops.push({ type: method.toUpperCase(), q });
+    maxQubit = Math.max(maxQubit, q);
+    return true;
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#") || line.startsWith("from ") || line.startsWith("import ") || line.startsWith("qc =") || line.startsWith("print(")) continue;
+
+    if (["h", "x", "y", "z", "s", "t"].some((m) => parseSingle(line, m))) continue;
+
+    let match = line.match(/\.\s*cx\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/);
+    if (match) {
+      const control = Number(match[1]);
+      const target = Number(match[2]);
+      maxQubit = Math.max(maxQubit, control, target);
+      ops.push({ type: "CX", control, target });
+      continue;
+    }
+
+    match = line.match(/\.\s*measure\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)/);
+    if (match) {
+      const q = Number(match[1]);
+      maxQubit = Math.max(maxQubit, q);
+      ops.push({ type: "M", q });
+      continue;
+    }
+
+    error = `Unsupported line: ${line}`;
+    break;
+  }
+
+  if (error) {
+    qiskitStatus.textContent = error;
+    return;
+  }
+
+  const nextQubitCount = Math.min(MAX_QUBITS, Math.max(1, maxQubit + 1));
+  state.qubitCount = nextQubitCount;
+  qubitCountInput.value = state.qubitCount;
+
+  const nextTimeline = Math.min(64, Math.max(4, ops.length + 2));
+  state.timelineLength = nextTimeline;
+  timelineLengthInput.value = state.timelineLength;
+  state.grid = emptyGrid();
+
+  let t = 0;
+  for (const op of ops) {
+    if (t >= state.timelineLength) break;
+    if (op.type === "CX") {
+      if (op.control < state.qubitCount && op.target < state.qubitCount && op.control !== op.target) {
+        state.grid[op.control][t] = { type: "CNOT_CONTROL", target: op.target };
+        state.grid[op.target][t] = { type: "CNOT_TARGET", control: op.control };
+      }
+    } else if (op.type === "M") {
+      if (op.q < state.qubitCount) state.grid[op.q][t] = { type: "M" };
+    } else {
+      const gate = op.type;
+      if (op.q < state.qubitCount) state.grid[op.q][t] = { type: gate };
+    }
+    t += 1;
+  }
+
+  state.runCache = null;
+  renderGrid();
+  stopFluidStageAnimation();
+  visualizationContainer.innerHTML = "";
+  resultSummary.textContent = "Qiskit code applied. Click Run Circuit to simulate.";
+  qiskitStatus.textContent = `Applied ${ops.length} operations from Qiskit composer.`;
+}
+
 function createAnimationLoop(drawFrame) {
   let active = true;
   let raf = 0;
@@ -473,159 +596,107 @@ function drawFluidStage(vectors, measured) {
 
   const qubits = vectors.map((v, q) => ({ q, ...v }));
   if (!qubits.length) {
-    ctx.fillStyle = "#0b1529";
+    ctx.fillStyle = "#081124";
     ctx.fillRect(0, 0, fluidStageCanvas.clientWidth, fluidStageCanvas.clientHeight);
     return;
   }
 
-  const laneTop = 42;
-  const laneBottom = 20;
-  const laneHeight = Math.max(24, (fluidStageCanvas.clientHeight - laneTop - laneBottom) / qubits.length);
-  const laneMap = qubits.map((qubit, idx) => {
-    const measuredCount = measured.filter((m) => m.q === qubit.q).length;
-    const centerY = laneTop + laneHeight * (idx + 0.5);
+  const measuredCountByQubit = new Map();
+  measured.forEach((m) => measuredCountByQubit.set(m.q, (measuredCountByQubit.get(m.q) || 0) + 1));
+
+  const vortices = qubits.map((qubit, i) => {
+    const angle = (i / qubits.length) * Math.PI * 2;
+    const radius = Math.min(fluidStageCanvas.clientWidth, fluidStageCanvas.clientHeight) * (0.2 + 0.22 * (i % 3) / 2);
+    const measuredWeight = 1 + (measuredCountByQubit.get(qubit.q) || 0) * 0.25;
     return {
-      ...qubit,
-      blochX: qubit.x,
-      blochY: qubit.y,
-      blochZ: qubit.z,
-      centerY,
-      measuredCount,
-      speed: 0.45 + Math.abs(qubit.y) * 1.55 + measuredCount * 0.2,
-      wobble: 7 + (1 - Math.abs(qubit.z)) * 16,
-      direction: qubit.x >= 0 ? 1 : -1,
-      hueA: 200 + qubit.p1 * 140,
-      hueB: 300 - qubit.p1 * 120,
+      x: fluidStageCanvas.clientWidth * 0.5 + Math.cos(angle) * radius,
+      y: fluidStageCanvas.clientHeight * 0.5 + Math.sin(angle) * radius * 0.58,
+      swirl: (qubit.x >= 0 ? 1 : -1) * (0.32 + Math.abs(qubit.y) * 0.9) * measuredWeight,
+      pull: 0.08 + (1 - Math.abs(qubit.z)) * 0.2,
+      hue: (210 + qubit.p1 * 130 + i * 18) % 360,
+      pulse: measuredWeight,
     };
   });
 
-  const pulses = measured.map((m, i) => ({
-    q: m.q,
-    t0: i * 90,
-    strength: 0.7 + m.p1 * 0.6,
+  const particles = Array.from({ length: Math.max(3200, qubits.length * 420) }, (_, i) => ({
+    x: Math.random() * fluidStageCanvas.clientWidth,
+    y: Math.random() * fluidStageCanvas.clientHeight,
+    vx: 0,
+    vy: 0,
+    life: Math.random(),
+    seed: i * 0.011,
   }));
-
-  const particles = Array.from({ length: Math.max(2600, qubits.length * 360) }, (_, i) => {
-    const lane = laneMap[i % laneMap.length];
-    return {
-      laneIndex: i % laneMap.length,
-      x: Math.random() * fluidStageCanvas.clientWidth,
-      y: lane.centerY + (Math.random() - 0.5) * laneHeight * 0.75,
-      vx: 0,
-      vy: 0,
-      life: Math.random(),
-      seed: i * 0.017,
-    };
-  });
 
   const onResize = () => resize();
   window.addEventListener("resize", onResize);
 
   state.fluidStageStop = createAnimationLoop((time) => {
     const w = fluidStageCanvas.clientWidth;
+    const h = fluidStageCanvas.clientHeight;
 
-    ctx.fillStyle = "rgba(5, 10, 18, 0.11)";
-    ctx.fillRect(0, 0, w, fluidStageCanvas.clientHeight);
+    ctx.fillStyle = "rgba(4, 9, 18, 0.12)";
+    ctx.fillRect(0, 0, w, h);
 
-    laneMap.forEach((lane) => {
-      const grad = ctx.createLinearGradient(0, lane.centerY, w, lane.centerY);
-      grad.addColorStop(0, `hsla(${lane.hueA} 85% 60% / 0.03)`);
-      grad.addColorStop(0.5, `hsla(${lane.hueB} 85% 60% / 0.12)`);
-      grad.addColorStop(1, `hsla(${lane.hueA} 85% 60% / 0.03)`);
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, lane.centerY - laneHeight * 0.42, w, laneHeight * 0.84);
-
-      ctx.strokeStyle = "rgba(140, 172, 255, 0.12)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, lane.centerY);
-      ctx.lineTo(w, lane.centerY);
-      ctx.stroke();
-
-      const arrowX = lane.direction > 0 ? w - 26 : 26;
-      const arrowTail = lane.direction > 0 ? arrowX - 12 : arrowX + 12;
-      ctx.strokeStyle = "rgba(220, 235, 255, 0.7)";
-      ctx.beginPath();
-      ctx.moveTo(arrowTail, lane.centerY);
-      ctx.lineTo(arrowX, lane.centerY);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(arrowX, lane.centerY);
-      ctx.lineTo(arrowX - lane.direction * 4, lane.centerY - 3);
-      ctx.lineTo(arrowX - lane.direction * 4, lane.centerY + 3);
-      ctx.closePath();
-      ctx.fillStyle = "rgba(220, 235, 255, 0.7)";
-      ctx.fill();
-    });
-
-    pulses.forEach((pulse) => {
-      const lane = laneMap.find((item) => item.q === pulse.q);
-      if (!lane) return;
-      const phase = ((time * 0.09 + pulse.t0) % (w + 160)) - 80;
-      const r = 12 + pulse.strength * 16;
-      ctx.strokeStyle = `hsla(${lane.hueA} 95% 72% / 0.33)`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(phase, lane.centerY, r, 0, Math.PI * 2);
-      ctx.stroke();
-    });
-
-    ctx.fillStyle = "rgba(220,230,255,0.8)";
-    ctx.font = "12px Inter, system-ui, sans-serif";
-    ctx.fillText("Legend: row=qubit, arrow=x direction, waviness=z coherence, speed=|y|, color=p(|1⟩), circles=measure pulses", 10, 18);
-
-    laneMap.forEach((lane) => {
-      ctx.fillStyle = "rgba(227, 239, 255, 0.9)";
-      ctx.fillText(`q${lane.q}  p1:${lane.p1.toFixed(2)}  x:${lane.blochX.toFixed(2)}  y:${lane.blochY.toFixed(2)}  z:${lane.blochZ.toFixed(2)}  m:${lane.measuredCount}`, 8, lane.centerY - 6);
-    });
+    const centerWave = Math.sin(time * 0.0012) * 0.5 + 0.5;
+    const bg = ctx.createRadialGradient(w * 0.5, h * 0.5, 20, w * 0.5, h * 0.5, Math.max(w, h) * 0.6);
+    bg.addColorStop(0, `rgba(40, 78, 165, ${0.06 + centerWave * 0.06})`);
+    bg.addColorStop(1, "rgba(3, 8, 18, 0)");
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, w, h);
 
     particles.forEach((p) => {
-      const lane = laneMap[p.laneIndex % laneMap.length];
-      const dxCenter = p.y - lane.centerY;
-      const localWave = Math.sin((p.x * 0.008) + time * 0.0015 * lane.direction + p.seed) * lane.wobble;
-      const wavePull = (lane.centerY + localWave - p.y) * 0.007;
-      const flowX = lane.direction * lane.speed * (0.12 + Math.abs(lane.blochX) * 0.1);
+      const noiseA = Math.sin((p.x * 0.004) + time * 0.0008 + p.seed);
+      const noiseB = Math.cos((p.y * 0.0045) - time * 0.0007 - p.seed);
+      let fx = noiseA * 0.035;
+      let fy = noiseB * 0.035;
+      let hue = 212;
 
-      let fx = flowX;
-      let fy = wavePull - dxCenter * 0.0022;
+      vortices.forEach((v) => {
+        const dx = p.x - v.x;
+        const dy = p.y - v.y;
+        const dist2 = dx * dx + dy * dy + 180;
+        const inv = 1 / dist2;
+        fx += (-dy * v.swirl) * inv * 28;
+        fy += (dx * v.swirl) * inv * 28;
+        fx += (-dx) * inv * v.pull * 9;
+        fy += (-dy) * inv * v.pull * 9;
+        hue = (hue + v.hue * inv * 1200) % 360;
+      });
 
-      if (lane.measuredCount > 0) {
-        const pulseWave = Math.sin((p.x * 0.015) - time * 0.003 + p.seed) * 0.09 * lane.measuredCount;
-        fy += pulseWave;
-      }
-
-      p.vx = p.vx * 0.965 + fx;
-      p.vy = p.vy * 0.965 + fy;
-
+      p.vx = p.vx * 0.964 + fx;
+      p.vy = p.vy * 0.964 + fy;
       const px = p.x;
       const py = p.y;
       p.x += p.vx;
       p.y += p.vy;
 
-      if (p.x < -40 || p.x > w + 40) {
-        p.x = lane.direction > 0 ? -20 : w + 20;
-        p.y = lane.centerY + (Math.random() - 0.5) * laneHeight * 0.8;
-      }
+      if (p.x < -20) p.x = w + 20;
+      if (p.x > w + 20) p.x = -20;
+      if (p.y < -20) p.y = h + 20;
+      if (p.y > h + 20) p.y = -20;
 
-      if (p.y < lane.centerY - laneHeight * 0.6 || p.y > lane.centerY + laneHeight * 0.6) {
-        p.y = lane.centerY + (Math.random() - 0.5) * laneHeight * 0.35;
-        p.vy *= 0.3;
-      }
-
-      p.life += 0.0026;
+      p.life += 0.0022;
       if (p.life > 1) {
         p.life = 0;
-        p.x = lane.direction > 0 ? Math.random() * (w * 0.35) : w - Math.random() * (w * 0.35);
-        p.y = lane.centerY + (Math.random() - 0.5) * laneHeight * 0.75;
+        p.x = Math.random() * w;
+        p.y = Math.random() * h;
       }
 
-      const alpha = 0.25 + 0.45 * (1 - p.life);
-      const blendHue = lane.hueA * (1 - p.life) + lane.hueB * p.life;
-      ctx.strokeStyle = `hsla(${blendHue.toFixed(1)} 96% 72% / ${alpha.toFixed(3)})`;
-      ctx.lineWidth = 1.1;
+      const alpha = 0.17 + 0.45 * (1 - p.life);
+      ctx.strokeStyle = `hsla(${(hue + 360) % 360} 95% 70% / ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(px, py);
       ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    });
+
+    vortices.forEach((v) => {
+      const pulse = 2 + Math.sin(time * 0.002 * v.pulse) * 2;
+      ctx.strokeStyle = `hsla(${v.hue} 95% 70% / 0.20)`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(v.x, v.y, 14 + pulse, 0, Math.PI * 2);
       ctx.stroke();
     });
   });
@@ -660,8 +731,15 @@ clearButton.addEventListener("click", () => {
   resultSummary.textContent = "Circuit cleared.";
   visualizationContainer.innerHTML = "";
   stopFluidStageAnimation();
+  syncQiskitFromGrid();
 });
 
 resizeButton.addEventListener("click", setGridSize);
+
+applyQiskitButton.addEventListener("click", applyQiskitToGrid);
+syncQiskitButton.addEventListener("click", () => {
+  syncQiskitFromGrid();
+  qiskitStatus.textContent = "Qiskit code regenerated from drag/drop grid.";
+});
 
 init();

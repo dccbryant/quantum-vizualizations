@@ -1,9 +1,10 @@
 # quantum-vizualizations
 
-A minimal quantum drag-and-drop circuit UI with an in-browser simulator and two focused outputs:
+A minimal quantum drag-and-drop circuit UI with an in-browser simulator and three focused areas:
 
-1. **Illustrated Bloch spheres** on the right (per-qubit state view).
-2. A **large minimal fluid stage canvas** below the main UI showing all-qubit particle flow dynamics.
+1. Drag/drop circuit grid.
+2. A right-side **Qiskit composer** editor for basic circuit text editing.
+3. A full-width **unified fluid surface** that creatively visualizes qubit state dynamics.
 
 ## Features
 
@@ -11,9 +12,11 @@ A minimal quantum drag-and-drop circuit UI with an in-browser simulator and two 
 - Place gates at **any timeline column**.
 - Convert two `X` placements in the same column into a **CNOT** pair.
 - Run the circuit on demand with **Run Circuit**.
-- Right panel always shows illustrated Bloch spheres for qubit states.
-- Bottom full-width canvas renders a minimal water-like particle flow where **each horizontal lane is one qubit**.
-- Visual mapping: flow direction = Bloch `x`, waviness = Bloch `z`, speed = `|Bloch y|`, color = `P(|1⟩)`, and measurement gates add traveling pulse rings.
+- Use the right-side **Qiskit Composer**:
+  - Generate Qiskit-like code from the drag/drop grid.
+  - Apply basic Qiskit-like code back into the grid (`h/x/y/z/s/t`, `cx`, `measure`).
+- Bloch spheres are shown **horizontally under the composer** for better right-panel space usage.
+- Bottom visualization is a single fluid surface influenced by all qubit states and measurements.
 
 ## Run locally
 
@@ -38,5 +41,5 @@ Then run the local server command above.
 
 1. Configure qubit and timeline length.
 2. Drag gates from the palette to any grid cell.
-3. Optional: add `Measure` gates to influence local flow intensity.
+3. Optional: edit or paste Qiskit code in the composer and click **Apply Qiskit Code**.
 4. Click **Run Circuit**.
