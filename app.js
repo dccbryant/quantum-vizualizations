@@ -9,6 +9,10 @@ const state = {
   runCache: null,
   fluidStageStop: null,
   visualizationMode: "angled3d",
+  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.15 },
+  cameraDragging: false,
+  cameraLastX: 0,
+  cameraLastY: 0,
 };
 
 const gatePalette = document.getElementById("gatePalette");
@@ -41,6 +45,7 @@ function init() {
   drawVisualizations([]);
   syncQiskitFromGrid();
   if (visualizationModeSelect) visualizationModeSelect.value = state.visualizationMode;
+  setupCameraInteractions();
 }
 
 function buildPalette() {
@@ -584,10 +589,56 @@ function createAnimationLoop(drawFrame) {
   };
 }
 
-function project3DPoint(x, y, z, w, h) {
-  const sx = w * 0.5 + x + y * 0.4;
-  const sy = h * 0.55 + y * 0.25 - z * 0.72;
-  return { x: sx, y: sy };
+function rotate3DPoint(x, y, z, camera) {
+  const cosY = Math.cos(camera.yaw);
+  const sinY = Math.sin(camera.yaw);
+  const x1 = x * cosY - z * sinY;
+  const z1 = x * sinY + z * cosY;
+
+  const cosP = Math.cos(camera.pitch);
+  const sinP = Math.sin(camera.pitch);
+  const y2 = y * cosP - z1 * sinP;
+  const z2 = y * sinP + z1 * cosP;
+  return { x: x1, y: y2, z: z2 };
+}
+
+function project3DPoint(x, y, z, w, h, camera = state.camera) {
+  const rotated = rotate3DPoint(x, y, z, camera);
+  const depth = 720 / (720 + rotated.z + 320);
+  const sx = w * 0.5 + rotated.x * depth * camera.zoom;
+  const sy = h * 0.56 + rotated.y * depth * camera.zoom;
+  return { x: sx, y: sy, depth };
+}
+
+function setupCameraInteractions() {
+  if (!fluidStageCanvas) return;
+  fluidStageCanvas.addEventListener("pointerdown", (e) => {
+    state.cameraDragging = true;
+    state.cameraLastX = e.clientX;
+    state.cameraLastY = e.clientY;
+    fluidStageCanvas.setPointerCapture(e.pointerId);
+    fluidStageCanvas.style.cursor = "grabbing";
+  });
+
+  fluidStageCanvas.addEventListener("pointermove", (e) => {
+    if (!state.cameraDragging) return;
+    const dx = e.clientX - state.cameraLastX;
+    const dy = e.clientY - state.cameraLastY;
+    state.cameraLastX = e.clientX;
+    state.cameraLastY = e.clientY;
+    state.camera.yaw += dx * 0.006;
+    state.camera.pitch = Math.max(0.15, Math.min(1.45, state.camera.pitch + dy * 0.004));
+  });
+
+  const stopDrag = () => { state.cameraDragging = false; fluidStageCanvas.style.cursor = "grab"; };
+  fluidStageCanvas.addEventListener("pointerup", stopDrag);
+  fluidStageCanvas.addEventListener("pointerleave", stopDrag);
+
+  fluidStageCanvas.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const delta = Math.sign(e.deltaY);
+    state.camera.zoom = Math.max(0.55, Math.min(2.8, state.camera.zoom - delta * 0.08));
+  }, { passive: false });
 }
 
 function drawFluidStage(vectors, measured) {
@@ -641,6 +692,15 @@ function drawFluidStage(vectors, measured) {
     };
   });
 
+  const landscapeGrid = [];
+  const gridSize = 28;
+  const spacing = 26;
+  for (let gx = -gridSize; gx <= gridSize; gx++) {
+    for (let gz = -gridSize; gz <= gridSize; gz++) {
+      landscapeGrid.push({ x: gx * spacing, z: gz * spacing });
+    }
+  }
+
   const onResize = () => resize();
   window.addEventListener("resize", onResize);
 
@@ -649,8 +709,53 @@ function drawFluidStage(vectors, measured) {
     const h = fluidStageCanvas.clientHeight;
     const mode = state.visualizationMode;
 
-    ctx.fillStyle = mode === "angled3d" ? "rgba(4, 10, 22, 0.14)" : "rgba(7, 5, 20, 0.12)";
+    ctx.fillStyle = mode === "neonstorm" ? "rgba(7, 5, 20, 0.12)" : "rgba(4, 10, 22, 0.14)";
     ctx.fillRect(0, 0, w, h);
+
+    if (mode === "landscape3d") {
+      const sky = ctx.createLinearGradient(0, 0, 0, h);
+      sky.addColorStop(0, "rgba(45, 66, 120, 0.16)");
+      sky.addColorStop(1, "rgba(4, 8, 20, 0)");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, w, h);
+
+      const sorted = [];
+      for (const cell of landscapeGrid) {
+        let height = 0;
+        let hue = 220;
+        fieldSources.forEach((s) => {
+          const dx = cell.x - s.x;
+          const dz = cell.z - s.y;
+          const dist = Math.hypot(dx, dz) + 28;
+          height += (s.boost * 220) / dist;
+          hue = (hue + s.hue / dist * 12) % 360;
+        });
+        height += Math.sin((cell.x + time * 0.09) * 0.01) * 12 + Math.cos((cell.z - time * 0.07) * 0.01) * 10;
+        const p = project3DPoint(cell.x, height - 80, cell.z, w, h);
+        sorted.push({ p, hue, height });
+      }
+      sorted.sort((a, b) => a.p.depth - b.p.depth);
+      sorted.forEach((node) => {
+        const r = 0.8 + node.p.depth * 2.4;
+        const alpha = 0.18 + Math.min(0.46, node.height / 420);
+        ctx.fillStyle = `hsla(${(node.hue + 360) % 360} 92% 70% / ${alpha.toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(node.p.x, node.p.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      fieldSources.forEach((s, idx) => {
+        const marker = project3DPoint(s.x, 35 + Math.sin(time * 0.003 + idx) * 8, s.y, w, h);
+        const glow = ctx.createRadialGradient(marker.x, marker.y, 1, marker.x, marker.y, 32);
+        glow.addColorStop(0, `hsla(${s.hue} 95% 72% / 0.36)`);
+        glow.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(marker.x, marker.y, 32, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      return;
+    }
 
     const plane = ctx.createLinearGradient(0, h * 0.18, w, h * 0.92);
     plane.addColorStop(0, mode === "angled3d" ? "rgba(39, 79, 160, 0.09)" : "rgba(172, 73, 255, 0.07)");
@@ -728,8 +833,7 @@ function drawFluidStage(vectors, measured) {
       }
 
       const proj = project3DPoint(p.x, p.y, p.z, w, h);
-      const depth = (p.z + 260) / 520;
-      const radius = 0.8 + depth * 1.5;
+      const radius = 0.8 + proj.depth * 1.5;
       const alpha = (mode === "neonstorm" ? 0.24 : 0.18) + 0.42 * (1 - p.life);
       ctx.fillStyle = `hsla(${(hue + 360) % 360} 96% 70% / ${alpha.toFixed(3)})`;
       ctx.beginPath();
