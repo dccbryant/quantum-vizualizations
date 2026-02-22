@@ -9,7 +9,8 @@ const state = {
   runCache: null,
   fluidStageStop: null,
   visualizationMode: "angled3d",
-  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.7 },
+  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.7, panX: 0, panY: 0 },
+  landscapeFlip: -1,
   cameraDragging: false,
   cameraLastX: 0,
   cameraLastY: 0,
@@ -33,6 +34,11 @@ const saveQiskitButton = document.getElementById("saveQiskitButton");
 const loadQiskitButton = document.getElementById("loadQiskitButton");
 const loadQiskitFile = document.getElementById("loadQiskitFile");
 const visualizationModeSelect = document.getElementById("visualizationModeSelect");
+const panLeftButton = document.getElementById("panLeftButton");
+const panRightButton = document.getElementById("panRightButton");
+const panUpButton = document.getElementById("panUpButton");
+const panDownButton = document.getElementById("panDownButton");
+const flipLandscapeButton = document.getElementById("flipLandscapeButton");
 
 function emptyGrid() {
   return Array.from({ length: state.qubitCount }, () => Array(state.timelineLength).fill(null));
@@ -605,8 +611,8 @@ function rotate3DPoint(x, y, z, camera) {
 function project3DPoint(x, y, z, w, h, camera = state.camera) {
   const rotated = rotate3DPoint(x, y, z, camera);
   const depth = 720 / (720 + rotated.z + 320);
-  const sx = w * 0.5 + rotated.x * depth * camera.zoom;
-  const sy = h * 0.56 + rotated.y * depth * camera.zoom;
+  const sx = w * 0.5 + rotated.x * depth * camera.zoom + (camera.panX || 0);
+  const sy = h * 0.56 + rotated.y * depth * camera.zoom + (camera.panY || 0);
   return { x: sx, y: sy, depth };
 }
 
@@ -729,7 +735,7 @@ function drawFluidStage(vectors, measured) {
           const dz = cell.z - s.y;
           const dist = Math.hypot(dx, dz) + 34;
           const polarity = s.z >= 0 ? 1 : -1;
-          height += polarity * (s.boost * (140 + Math.abs(s.z) * 0.55)) / dist;
+          height += state.landscapeFlip * polarity * (s.boost * (140 + Math.abs(s.z) * 0.55)) / dist;
           hue = (hue + s.hue / dist * 18) % 360;
         });
         height *= 170;
@@ -867,7 +873,7 @@ runButton.addEventListener("click", () => {
     <strong>Simulation complete.</strong><br>
     ${measuredText}<br>
     Sample probabilities: ${result.amplitudes.slice(0, 8).join(" | ")}<br>
-    Fluid mapping: direction from Bloch x, speed from Bloch y magnitude, coherence from Bloch z, measurements boost local motion.
+    Fluid mapping: direction from Bloch x, speed from Bloch y magnitude, z sculpts landscape height, measurements boost local motion. Use rotate/zoom + pan/flip icons in the visualization bar.
   `;
   drawVisualizations(result.qubitBlochVectors);
   drawFluidStage(result.qubitBlochVectors, result.measured);
@@ -920,6 +926,20 @@ visualizationModeSelect.addEventListener("change", () => {
   if (state.runCache) {
     drawFluidStage(state.runCache.qubitBlochVectors, state.runCache.measured);
   }
+});
+
+const panBy = (dx, dy) => {
+  state.camera.panX += dx;
+  state.camera.panY += dy;
+  if (state.runCache) drawFluidStage(state.runCache.qubitBlochVectors, state.runCache.measured);
+};
+panLeftButton?.addEventListener("click", () => panBy(-40, 0));
+panRightButton?.addEventListener("click", () => panBy(40, 0));
+panUpButton?.addEventListener("click", () => panBy(0, -30));
+panDownButton?.addEventListener("click", () => panBy(0, 30));
+flipLandscapeButton?.addEventListener("click", () => {
+  state.landscapeFlip *= -1;
+  if (state.runCache) drawFluidStage(state.runCache.qubitBlochVectors, state.runCache.measured);
 });
 
 init();
