@@ -17,8 +17,8 @@ A minimal quantum drag-and-drop circuit UI with an in-browser simulator and thre
   - Apply basic Qiskit-like code back into the grid (`h/x/y/z/s/t`, `cx`, `measure`).
   - Save composer code to a local `.qiskit.py` file and load it back later.
 - Bloch spheres are shown in a **horizontal strip below the palette/grid/composer row** for better space usage.
-- Bottom visualization supports multiple modes: **Angled 3D Fluid Plane**, **Neon Quantum Storm**, and **Interactive Qubit Landscape** (non-fluid).
-- Landscape mode presents a rotatable/zoomable 3D point terrain where qubits shape peaks and troughs directly (drag to rotate, wheel to zoom). Use movement icons to pan (⬅️➡️⬆️⬇️) and flip (🔄) the terrain.
+- Bottom visualization supports multiple modes: **Interactive Qubit Landscape** (default) and **Angled 3D Fluid Plane**.
+- Landscape mode presents a rotatable/zoomable 3D point terrain where qubits shape peaks and troughs directly (drag to rotate, wheel to zoom). Use movement icons to pan (⬅️➡️⬆️⬇️), flip (🔄), and reset view (♻️).
 - 3D mapping: x≈Bloch x drift, y≈Bloch y energy, z≈Bloch z depth lift, and measurements intensify nearby motion.
 
 ## Run locally

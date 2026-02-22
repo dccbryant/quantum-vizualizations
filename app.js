@@ -8,8 +8,8 @@ const state = {
   draggedGate: null,
   runCache: null,
   fluidStageStop: null,
-  visualizationMode: "angled3d",
-  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.7, panX: 0, panY: 0 },
+  visualizationMode: "landscape3d",
+  camera: { yaw: -0.78, pitch: 0.72, zoom: 1.45, panX: 0, panY: 0 },
   landscapeFlip: -1,
   cameraDragging: false,
   cameraLastX: 0,
@@ -39,6 +39,7 @@ const panRightButton = document.getElementById("panRightButton");
 const panUpButton = document.getElementById("panUpButton");
 const panDownButton = document.getElementById("panDownButton");
 const flipLandscapeButton = document.getElementById("flipLandscapeButton");
+const resetViewButton = document.getElementById("resetViewButton");
 
 function emptyGrid() {
   return Array.from({ length: state.qubitCount }, () => Array(state.timelineLength).fill(null));
@@ -610,10 +611,21 @@ function rotate3DPoint(x, y, z, camera) {
 
 function project3DPoint(x, y, z, w, h, camera = state.camera) {
   const rotated = rotate3DPoint(x, y, z, camera);
-  const depth = 720 / (720 + rotated.z + 320);
+  const denom = Math.max(260, Math.min(1800, 720 + rotated.z + 320));
+  const depth = 720 / denom;
   const sx = w * 0.5 + rotated.x * depth * camera.zoom + (camera.panX || 0);
   const sy = h * 0.56 + rotated.y * depth * camera.zoom + (camera.panY || 0);
   return { x: sx, y: sy, depth };
+}
+
+
+function resetVisualizationView() {
+  state.camera.yaw = -0.78;
+  state.camera.pitch = 0.72;
+  state.camera.zoom = 1.45;
+  state.camera.panX = 0;
+  state.camera.panY = 0;
+  state.landscapeFlip = -1;
 }
 
 function setupCameraInteractions() {
@@ -715,7 +727,7 @@ function drawFluidStage(vectors, measured) {
     const h = fluidStageCanvas.clientHeight;
     const mode = state.visualizationMode;
 
-    ctx.fillStyle = mode === "neonstorm" ? "rgba(7, 5, 20, 0.12)" : "rgba(4, 10, 22, 0.14)";
+    ctx.fillStyle = "rgba(4, 10, 22, 0.14)";
     ctx.fillRect(0, 0, w, h);
 
     if (mode === "landscape3d") {
@@ -726,7 +738,7 @@ function drawFluidStage(vectors, measured) {
       ctx.fillRect(0, 0, w, h);
 
       const sorted = [];
-      const landscapeCamera = { ...state.camera, zoom: state.camera.zoom * 1.25 };
+      const landscapeCamera = { ...state.camera, zoom: state.camera.zoom * 1.08 };
       for (const cell of landscapeGrid) {
         let height = 0;
         let hue = 220;
@@ -738,8 +750,9 @@ function drawFluidStage(vectors, measured) {
           height += state.landscapeFlip * polarity * (s.boost * (140 + Math.abs(s.z) * 0.55)) / dist;
           hue = (hue + s.hue / dist * 18) % 360;
         });
-        height *= 170;
-        height += Math.sin((cell.x + time * 0.09) * 0.01) * 18 + Math.cos((cell.z - time * 0.07) * 0.01) * 14;
+        height *= 118;
+        height += Math.sin((cell.x + time * 0.09) * 0.01) * 11 + Math.cos((cell.z - time * 0.07) * 0.01) * 9;
+        height = Math.max(-240, Math.min(240, height));
         const p = project3DPoint(cell.x, height, cell.z, w, h, landscapeCamera);
         sorted.push({ p, hue, height });
       }
@@ -759,7 +772,7 @@ function drawFluidStage(vectors, measured) {
     }
 
     const plane = ctx.createLinearGradient(0, h * 0.18, w, h * 0.92);
-    plane.addColorStop(0, mode === "angled3d" ? "rgba(39, 79, 160, 0.09)" : "rgba(172, 73, 255, 0.07)");
+    plane.addColorStop(0, "rgba(39, 79, 160, 0.09)");
     plane.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = plane;
     ctx.fillRect(0, 0, w, h);
@@ -788,7 +801,7 @@ function drawFluidStage(vectors, measured) {
       let fx = Math.sin((p.x * 0.007) + p.seed + time * 0.0008) * 0.032;
       let fy = Math.cos((p.y * 0.007) - p.seed - time * 0.0007) * 0.032;
       let fz = Math.sin((p.z * 0.01) + p.seed + time * 0.0004) * 0.026;
-      let hue = mode === "angled3d" ? 210 : 280;
+      let hue = 210;
 
       fieldSources.forEach((s) => {
         const dx = p.x - s.x;
@@ -801,13 +814,6 @@ function drawFluidStage(vectors, measured) {
         fz += (-dz * 9 + s.driftX * 10) * inv;
         hue = (hue + s.hue * inv * 1400) % 360;
       });
-
-      if (mode === "neonstorm") {
-        fx *= 1.3;
-        fy *= 1.3;
-        fz *= 1.1;
-        hue = (hue + 45 + Math.sin(time * 0.002 + p.seed) * 25) % 360;
-      }
 
       p.vx = p.vx * 0.965 + fx;
       p.vy = p.vy * 0.965 + fy;
@@ -835,7 +841,7 @@ function drawFluidStage(vectors, measured) {
 
       const proj = project3DPoint(p.x, p.y, p.z, w, h);
       const radius = 0.8 + proj.depth * 1.5;
-      const alpha = (mode === "neonstorm" ? 0.24 : 0.18) + 0.42 * (1 - p.life);
+      const alpha = 0.2 + 0.42 * (1 - p.life);
       ctx.fillStyle = `hsla(${(hue + 360) % 360} 96% 70% / ${alpha.toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(proj.x, proj.y, radius, 0, Math.PI * 2);
@@ -844,7 +850,7 @@ function drawFluidStage(vectors, measured) {
 
     fieldSources.forEach((s) => {
       const sourcePoint = project3DPoint(s.x, s.y, s.z, w, h);
-      const glowRadius = mode === "neonstorm" ? 40 : 28;
+      const glowRadius = 30;
       const glow = ctx.createRadialGradient(sourcePoint.x, sourcePoint.y, 1, sourcePoint.x, sourcePoint.y, glowRadius);
       glow.addColorStop(0, `hsla(${s.hue} 95% 72% / 0.28)`);
       glow.addColorStop(1, "rgba(0,0,0,0)");
@@ -873,7 +879,7 @@ runButton.addEventListener("click", () => {
     <strong>Simulation complete.</strong><br>
     ${measuredText}<br>
     Sample probabilities: ${result.amplitudes.slice(0, 8).join(" | ")}<br>
-    Fluid mapping: direction from Bloch x, speed from Bloch y magnitude, z sculpts landscape height, measurements boost local motion. Use rotate/zoom + pan/flip icons in the visualization bar.
+    Fluid mapping: x/y/z shape motion and terrain. Use rotate/zoom, pan arrows, flip, and reset (♻️) to recover a clear view.
   `;
   drawVisualizations(result.qubitBlochVectors);
   drawFluidStage(result.qubitBlochVectors, result.measured);
@@ -939,6 +945,10 @@ panUpButton?.addEventListener("click", () => panBy(0, -30));
 panDownButton?.addEventListener("click", () => panBy(0, 30));
 flipLandscapeButton?.addEventListener("click", () => {
   state.landscapeFlip *= -1;
+  if (state.runCache) drawFluidStage(state.runCache.qubitBlochVectors, state.runCache.measured);
+});
+resetViewButton?.addEventListener("click", () => {
+  resetVisualizationView();
   if (state.runCache) drawFluidStage(state.runCache.qubitBlochVectors, state.runCache.measured);
 });
 
