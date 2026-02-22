@@ -738,31 +738,41 @@ function drawFluidStage(vectors, measured) {
       ctx.fillRect(0, 0, w, h);
 
       const sorted = [];
-      const landscapeCamera = { ...state.camera, zoom: state.camera.zoom * 1.08 };
+      const landscapeCamera = { ...state.camera, zoom: state.camera.zoom * 1.1 };
+      const rawHeights = [];
+      let maxAbsHeight = 1;
+
       for (const cell of landscapeGrid) {
-        let height = 0;
+        let rawHeight = 0;
         let hue = 220;
         fieldSources.forEach((s) => {
           const dx = cell.x - s.x;
           const dz = cell.z - s.y;
-          const dist = Math.hypot(dx, dz) + 34;
+          const dist = Math.hypot(dx, dz) + 28;
           const polarity = s.z >= 0 ? 1 : -1;
-          height += state.landscapeFlip * polarity * (s.boost * (140 + Math.abs(s.z) * 0.55)) / dist;
-          hue = (hue + s.hue / dist * 18) % 360;
+          rawHeight += state.landscapeFlip * polarity * (s.boost * (190 + Math.abs(s.z) * 0.9)) / dist;
+          hue = (hue + s.hue / dist * 22) % 360;
         });
-        height *= 118;
-        height += Math.sin((cell.x + time * 0.09) * 0.01) * 11 + Math.cos((cell.z - time * 0.07) * 0.01) * 9;
-        height = Math.max(-240, Math.min(240, height));
-        const p = project3DPoint(cell.x, height, cell.z, w, h, landscapeCamera);
-        sorted.push({ p, hue, height });
+
+        rawHeight += Math.sin((cell.x + time * 0.09) * 0.01) * 10 + Math.cos((cell.z - time * 0.07) * 0.01) * 8;
+        maxAbsHeight = Math.max(maxAbsHeight, Math.abs(rawHeight));
+        rawHeights.push({ cell, hue, rawHeight });
       }
+
+      const exaggeration = 360 / maxAbsHeight;
+      rawHeights.forEach((entry) => {
+        const height = Math.max(-360, Math.min(360, entry.rawHeight * exaggeration));
+        const p = project3DPoint(entry.cell.x, height, entry.cell.z, w, h, landscapeCamera);
+        sorted.push({ p, hue: entry.hue, height });
+      });
+
       sorted.sort((a, b) => a.p.depth - b.p.depth);
       sorted.forEach((node) => {
-        const r = 0.95 + node.p.depth * 2.8;
+        const r = 1.0 + node.p.depth * 3.0;
         const crest = Math.max(0, node.height);
         const trough = Math.max(0, -node.height);
-        const alpha = 0.14 + Math.min(0.5, (crest + trough) / 260);
-        const lightness = 56 + Math.min(26, crest / 12) - Math.min(18, trough / 14);
+        const alpha = 0.15 + Math.min(0.56, (crest + trough) / 320);
+        const lightness = 54 + Math.min(30, crest / 9) - Math.min(20, trough / 11);
         ctx.fillStyle = `hsla(${(node.hue + 360) % 360} 92% ${lightness.toFixed(1)}% / ${alpha.toFixed(3)})`;
         ctx.beginPath();
         ctx.arc(node.p.x, node.p.y, r, 0, Math.PI * 2);
